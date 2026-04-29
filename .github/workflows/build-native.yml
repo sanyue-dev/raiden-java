@@ -10,10 +10,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-13
-            artifact: Raiden-macOS-x64
-            jpackage-type: dmg
-            path: target/native/Raiden-*.dmg
           - os: macos-14
             artifact: Raiden-macOS-arm64
             jpackage-type: dmg
@@ -51,7 +47,6 @@ jobs:
 
       - run: |
           version="${GITHUB_REF_NAME#v}"
-          mv artifacts/Raiden-macOS-x64/Raiden-*.dmg "Raiden-macOS-x64-${version}.dmg"
           mv artifacts/Raiden-macOS-arm64/Raiden-*.dmg "Raiden-macOS-arm64-${version}.dmg"
           zip -r "Raiden-Windows-${version}.zip" artifacts/Raiden-Windows
 
@@ -59,6 +54,5 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            Raiden-macOS-x64-*.dmg
             Raiden-macOS-arm64-*.dmg
             Raiden-Windows-*.zip
