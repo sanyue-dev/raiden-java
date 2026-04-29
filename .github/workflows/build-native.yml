@@ -48,7 +48,8 @@ jobs:
       - run: |
           version="${GITHUB_REF_NAME#v}"
           mv artifacts/Raiden-macOS-arm64/Raiden-*.dmg "Raiden-macOS-arm64-${version}.dmg"
-          zip -r "Raiden-Windows-${version}.zip" artifacts/Raiden-Windows
+          mv artifacts/Raiden-Windows Raiden
+          zip -r "Raiden-Windows-${version}.zip" Raiden
 
       - uses: softprops/action-gh-release@v2
         with:

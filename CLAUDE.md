@@ -9,11 +9,12 @@ MQTT 充电桩模拟客户端，Java Swing 版。
 ## 常用命令
 
 - `mvn exec:java` — 编译并直接运行 Swing 客户端，入口为 `com.raiden.Main`。
-- `mvn package` — 打包 shaded fat JAR，输出 `target/raiden-java-1.0.0.jar`。
-- `java -jar target/raiden-java-1.0.0.jar` — 运行已打包的客户端。
+- `mvn package` — 打包 shaded fat JAR，输出 `target/raiden-java-${version}.jar`。
+- `java -jar target/raiden-java-${version}.jar` — 运行已打包的客户端。
 - `mvn test` — 运行 Maven 测试阶段；当前仓库没有 `src/test` 测试源码。
 - `mvn -Dtest=ClassName test` — 后续添加 Maven 测试后运行单个测试类。
 - `mvn clean package -Pnative -Djpackage.type=app-image` — 从 clean 状态验证 native app-image；确认 `target/jpackage-input/*.jar` 包含依赖类。
+- `mvn clean package -Pnative -Djpackage.type=dmg` — 在本机 Intel macOS 生成 x64 DMG，输出 `target/native/Raiden-${version}.dmg`。
 
 仓库当前没有单独的 lint 插件或格式化命令。
 
@@ -40,6 +41,7 @@ MQTT 充电桩模拟客户端，Java Swing 版。
 
 - 字段使用 IntelliJ 风格的 `my` 前缀，例如 `myBrokerUrl`、`myStation`。
 - 使用 `org.jetbrains.annotations` 的 `@NotNull` / `@Nullable` 标注边界。
+- 主界面字体通过 `ui/MainFrameFonts` 加载 `src/main/resources/fonts/Maple-Regular.ttf` 和 `Maple-Bold.ttf`；资源缺失会明确失败，不做系统字体 fallback。
 - 不要为了“跑通”加入静默 fallback、mock 成功路径或吞错逻辑；调试时让失败明确暴露。`.claude/rules/debug-first.md` 中的 Debug-First Policy 适用于 Java/Kotlin 文件。
 
 ## 依赖和环境
@@ -48,6 +50,7 @@ MQTT 充电桩模拟客户端，Java Swing 版。
 - Eclipse Paho MQTT v3 `1.2.5`。
 - FlatLaf `3.5.4`，当前入口使用 `FlatLightLaf`。
 - JetBrains Annotations `26.0.1`。
-- GitHub Actions macOS native 包按架构拆分：`macos-13` 生成 x64，`macos-14` 生成 arm64；用户按 CPU 架构下载，不按 macOS 版本下载。
+- GitHub Actions native 包只自动构建 `macos-14` arm64 DMG 和 Windows ZIP；macOS x64 DMG 由本机 Intel macOS 手动构建并上传 release。
 - release 资产名由 workflow 统一加版本号，例如 `Raiden-macOS-arm64-1.0.0.dmg` 和 `Raiden-Windows-1.0.0.zip`。
+- 发版流程：更新 `pom.xml` 版本并推送 `main`，本机先构建 x64 DMG，再推送 `vX.Y.Z` tag 触发 CI 生成 arm64/Windows，最后用 `gh release upload` 补传 x64 DMG。
 - 系统代理 `127.0.0.1:7890` 可能导致 MQTT 连接 reset；运行时需要通过 `JAVA_TOOL_OPTIONS` 或 shell 环境绕过内网 broker 地址。
