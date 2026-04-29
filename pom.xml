@@ -70,4 +70,95 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>native</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>clean-native</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <delete dir="${project.build.directory}/native" quiet="true"/>
+                    <delete dir="${project.build.directory}/jre" quiet="true"/>
+                    <delete dir="${project.build.directory}/jpackage-input" quiet="true"/>
+                    <mkdir dir="${project.build.directory}/jpackage-input"/>
+                    <copy file="${project.build.directory}/${project.build.finalName}.jar" todir="${project.build.directory}/jpackage-input"/>
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.5.0</version>
+            <executions>
+              <execution>
+                <id>jlink</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${env.JAVA_HOME}/bin/jlink</executable>
+                  <arguments>
+                    <argument>--add-modules</argument>
+                    <argument>java.base,java.desktop,java.logging,java.prefs</argument>
+                    <argument>--output</argument>
+                    <argument>${project.build.directory}/jre</argument>
+                    <argument>--strip-debug</argument>
+                    <argument>--no-header-files</argument>
+                    <argument>--no-man-pages</argument>
+                    <argument>--compress</argument>
+                    <argument>zip-9</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>jpackage</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${env.JAVA_HOME}/bin/jpackage</executable>
+                  <arguments>
+                    <argument>--input</argument>
+                    <argument>${project.build.directory}/jpackage-input</argument>
+                    <argument>--name</argument>
+                    <argument>Raiden</argument>
+                    <argument>--main-jar</argument>
+                    <argument>${project.build.finalName}.jar</argument>
+                    <argument>--main-class</argument>
+                    <argument>com.raiden.Main</argument>
+                    <argument>--runtime-image</argument>
+                    <argument>${project.build.directory}/jre</argument>
+                    <argument>--type</argument>
+                    <argument>app-image</argument>
+                    <argument>--dest</argument>
+                    <argument>${project.build.directory}/native</argument>
+                    <argument>--app-version</argument>
+                    <argument>${project.version}</argument>
+                    <argument>--vendor</argument>
+                    <argument>Raiden</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
