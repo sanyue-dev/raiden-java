@@ -119,7 +119,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     myPortTable.setIntercellSpacing(new Dimension(0, 0));
     myPortTable.setFocusable(false);
     myPortTable.setDefaultEditor(Object.class, null);
-    myPortTable.setFont(new Font("SansSerif", Font.PLAIN, 13));
+    myPortTable.setFont(MainFrameFonts.plain(13f));
     myPortTable.setForeground(COLOR_TEXT);
     myPortTable.setBackground(COLOR_SURFACE);
     myPortTable.setSelectionBackground(COLOR_SELECTION);
@@ -130,7 +130,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     tableHeader.setReorderingAllowed(false);
     tableHeader.setResizingAllowed(false);
     tableHeader.setPreferredSize(new Dimension(0, 30));
-    tableHeader.setFont(new Font("SansSerif", Font.BOLD, 11));
+    tableHeader.setFont(MainFrameFonts.bold(11f));
     tableHeader.setForeground(COLOR_MUTED);
     tableHeader.setBackground(COLOR_SURFACE_ALT);
     tableHeader.setBorder(new LineBorder(COLOR_BORDER, 1));
@@ -141,7 +141,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   }
 
   private void configureSpinner() {
-    myPortCountSpinner.setFont(new Font("SansSerif", Font.BOLD, 14));
+    myPortCountSpinner.setFont(MainFrameFonts.bold(14f));
     myPortCountSpinner.setPreferredSize(new Dimension(92, 34));
     myPortCountSpinner.setMaximumSize(new Dimension(92, 34));
     JComponent editor = myPortCountSpinner.getEditor();
@@ -152,7 +152,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
       defaultEditor.getTextField().setBackground(COLOR_SURFACE_ALT);
       defaultEditor.getTextField().setForeground(COLOR_TEXT);
       defaultEditor.getTextField().setCaretColor(COLOR_ACCENT);
-      defaultEditor.getTextField().setFont(new Font("SansSerif", Font.BOLD, 14));
+      defaultEditor.getTextField().setFont(MainFrameFonts.bold(14f));
     }
     myPortCountSpinner.setBorder(new LineBorder(COLOR_BORDER, 1, true));
   }
@@ -161,7 +161,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     myLogArea.setEditable(false);
     myLogArea.setLineWrap(false);
     myLogArea.setWrapStyleWord(false);
-    myLogArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
+    myLogArea.setFont(MainFrameFonts.plain(11f));
     myLogArea.setForeground(COLOR_TEXT);
     myLogArea.setBackground(new Color(0xF8F6EE));
     myLogArea.setCaretColor(COLOR_ACCENT);
@@ -174,7 +174,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   }
 
   private void styleInput(@NotNull JTextField field) {
-    field.setFont(new Font("Monospaced", Font.PLAIN, 12));
+    field.setFont(MainFrameFonts.plain(12f));
     field.setForeground(COLOR_TEXT);
     field.setBackground(COLOR_SURFACE_ALT);
     field.setCaretColor(COLOR_ACCENT);
@@ -196,7 +196,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
                            @NotNull Color background,
                            @NotNull Color foreground,
                            @NotNull Color borderColor) {
-    button.setFont(new Font("SansSerif", Font.BOLD, 12));
+    button.setFont(MainFrameFonts.bold(12f));
     button.setForeground(foreground);
     button.setBackground(background);
     button.setOpaque(true);
@@ -362,7 +362,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     row.setOpaque(false);
 
     JLabel titleLabel = new JLabel(title);
-    titleLabel.setFont(new Font("SansSerif", Font.BOLD, 10));
+    titleLabel.setFont(MainFrameFonts.bold(10f));
     titleLabel.setForeground(COLOR_MUTED);
 
     row.add(titleLabel, BorderLayout.NORTH);
@@ -409,7 +409,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     header.setOpaque(false);
 
     JLabel titleLabel = new JLabel(title);
-    titleLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
+    titleLabel.setFont(MainFrameFonts.bold(13f));
     titleLabel.setForeground(COLOR_TEXT);
 
     header.add(titleLabel, BorderLayout.CENTER);
@@ -425,7 +425,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     block.setOpaque(false);
 
     JLabel titleLabel = new JLabel(title);
-    titleLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+    titleLabel.setFont(MainFrameFonts.bold(11f));
     titleLabel.setForeground(COLOR_MUTED);
 
     block.add(titleLabel, BorderLayout.NORTH);
@@ -437,7 +437,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   @NotNull
   private JLabel createBadgeLabel() {
     JLabel label = new JLabel();
-    label.setFont(new Font("SansSerif", Font.BOLD, 11));
+    label.setFont(MainFrameFonts.bold(11f));
     label.setOpaque(true);
     label.setBorder(new EmptyBorder(5, 8, 5, 8));
     return label;
@@ -446,7 +446,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   @NotNull
   private JLabel createInspectorValueLabel() {
     JLabel label = new JLabel();
-    label.setFont(new Font("SansSerif", Font.BOLD, 16));
+    label.setFont(MainFrameFonts.bold(16f));
     label.setForeground(COLOR_TEXT);
     return label;
   }
@@ -454,7 +454,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   @NotNull
   private JLabel createHintLabel() {
     JLabel label = new JLabel("<html>请选择表格中的端口，查看状态和可用操作。</html>");
-    label.setFont(new Font("SansSerif", Font.PLAIN, 11));
+    label.setFont(MainFrameFonts.plain(11f));
     label.setForeground(COLOR_MUTED);
     label.setVerticalAlignment(SwingConstants.TOP);
     return label;
@@ -707,7 +707,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
       boolean active = port.getState() == ChargingPortState.CHARGING;
       boolean closing = port.getState() == ChargingPortState.CLOSING;
 
-      setFont(new Font("SansSerif", column == 1 ? Font.BOLD : Font.PLAIN, 13));
+      setFont(column == 1 ? MainFrameFonts.bold(13f) : MainFrameFonts.plain(13f));
       setBorder(new EmptyBorder(0, 10, 0, 10));
       setForeground(COLOR_TEXT);
       setHorizontalAlignment(column == 2 ? RIGHT : LEFT);
