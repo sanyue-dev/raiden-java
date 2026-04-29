@@ -122,7 +122,7 @@
                   <goal>exec</goal>
                 </goals>
                 <configuration>
-                  <executable>${env.JAVA_HOME}/bin/jlink</executable>
+                  <executable>jlink</executable>
                   <arguments>
                     <argument>--add-modules</argument>
                     <argument>java.base,java.desktop,java.logging,java.prefs</argument>
@@ -143,7 +143,7 @@
                   <goal>exec</goal>
                 </goals>
                 <configuration>
-                  <executable>${env.JAVA_HOME}/bin/jpackage</executable>
+                  <executable>jpackage</executable>
                   <arguments>
                     <argument>--input</argument>
                     <argument>${project.build.directory}/jpackage-input</argument>
