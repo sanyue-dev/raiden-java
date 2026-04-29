@@ -13,6 +13,7 @@
     <maven.compiler.source>25</maven.compiler.source>
     <maven.compiler.target>25</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <jpackage.type>app-image</jpackage.type>
   </properties>
 
   <dependencies>
@@ -90,7 +91,6 @@
                 <configuration>
                   <target>
                     <delete dir="${project.build.directory}/native" quiet="true"/>
-                    <delete dir="${project.build.directory}/jre" quiet="true"/>
                     <delete dir="${project.build.directory}/jpackage-input" quiet="true"/>
                   </target>
                 </configuration>
@@ -116,27 +116,6 @@
             <version>3.5.0</version>
             <executions>
               <execution>
-                <id>jlink</id>
-                <phase>prepare-package</phase>
-                <goals>
-                  <goal>exec</goal>
-                </goals>
-                <configuration>
-                  <executable>jlink</executable>
-                  <arguments>
-                    <argument>--add-modules</argument>
-                    <argument>java.base,java.desktop,java.logging,java.prefs</argument>
-                    <argument>--output</argument>
-                    <argument>${project.build.directory}/jre</argument>
-                    <argument>--strip-debug</argument>
-                    <argument>--no-header-files</argument>
-                    <argument>--no-man-pages</argument>
-                    <argument>--compress</argument>
-                    <argument>zip-9</argument>
-                  </arguments>
-                </configuration>
-              </execution>
-              <execution>
                 <id>jpackage</id>
                 <phase>package</phase>
                 <goals>
@@ -153,10 +132,10 @@
                     <argument>${project.build.finalName}.jar</argument>
                     <argument>--main-class</argument>
                     <argument>com.raiden.Main</argument>
-                    <argument>--runtime-image</argument>
-                    <argument>${project.build.directory}/jre</argument>
+                    <argument>--add-modules</argument>
+                    <argument>java.base,java.desktop,java.logging,java.prefs</argument>
                     <argument>--type</argument>
-                    <argument>app-image</argument>
+                    <argument>${jpackage.type}</argument>
                     <argument>--dest</argument>
                     <argument>${project.build.directory}/native</argument>
                     <argument>--app-version</argument>

@@ -12,9 +12,11 @@ jobs:
         include:
           - os: macos-latest
             artifact: Raiden-macOS
-            path: target/native/Raiden.app
+            jpackage-type: dmg
+            path: target/native/Raiden-*.dmg
           - os: windows-latest
             artifact: Raiden-Windows
+            jpackage-type: app-image
             path: target/native/Raiden
     runs-on: ${{ matrix.os }}
     steps:
@@ -25,7 +27,7 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
-      - run: mvn package -Pnative
+      - run: mvn package -Pnative -Djpackage.type=${{ matrix.jpackage-type }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -45,12 +47,11 @@ jobs:
 
       - run: |
           cd artifacts
-          zip -r ../Raiden-macOS.zip Raiden-macOS
           zip -r ../Raiden-Windows.zip Raiden-Windows
 
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            Raiden-macOS.zip
+            artifacts/Raiden-macOS/Raiden-*.dmg
             Raiden-Windows.zip
