@@ -27,7 +27,7 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
-      - run: mvn package -Pnative -Djpackage.type=${{ matrix.jpackage-type }}
+      - run: mvn package "-Pnative" "-Djpackage.type=${{ matrix.jpackage-type }}"
 
       - uses: actions/upload-artifact@v4
         with:
