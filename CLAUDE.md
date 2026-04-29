@@ -13,6 +13,7 @@ MQTT 充电桩模拟客户端，Java Swing 版。
 - `java -jar target/raiden-java-1.0.0.jar` — 运行已打包的客户端。
 - `mvn test` — 运行 Maven 测试阶段；当前仓库没有 `src/test` 测试源码。
 - `mvn -Dtest=ClassName test` — 后续添加 Maven 测试后运行单个测试类。
+- `mvn clean package -Pnative -Djpackage.type=app-image` — 从 clean 状态验证 native app-image；确认 `target/jpackage-input/*.jar` 包含依赖类。
 
 仓库当前没有单独的 lint 插件或格式化命令。
 
@@ -47,4 +48,6 @@ MQTT 充电桩模拟客户端，Java Swing 版。
 - Eclipse Paho MQTT v3 `1.2.5`。
 - FlatLaf `3.5.4`，当前入口使用 `FlatLightLaf`。
 - JetBrains Annotations `26.0.1`。
+- GitHub Actions macOS native 包按架构拆分：`macos-13` 生成 x64，`macos-14` 生成 arm64；用户按 CPU 架构下载，不按 macOS 版本下载。
+- release 资产名由 workflow 统一加版本号，例如 `Raiden-macOS-arm64-1.0.0.dmg` 和 `Raiden-Windows-1.0.0.zip`。
 - 系统代理 `127.0.0.1:7890` 可能导致 MQTT 连接 reset；运行时需要通过 `JAVA_TOOL_OPTIONS` 或 shell 环境绕过内网 broker 地址。
