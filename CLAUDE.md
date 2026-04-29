@@ -53,4 +53,7 @@ MQTT 充电桩模拟客户端，Java Swing 版。
 - GitHub Actions native 包只自动构建 `macos-14` arm64 DMG 和 Windows ZIP；macOS x64 DMG 由本机 Intel macOS 手动构建并上传 release。
 - release 资产名由 workflow 统一加版本号，例如 `Raiden-macOS-arm64-1.0.0.dmg` 和 `Raiden-Windows-1.0.0.zip`。
 - 发版流程：更新 `pom.xml` 版本并推送 `main`，本机先构建 x64 DMG，再推送 `vX.Y.Z` tag 触发 CI 生成 arm64/Windows，最后用 `gh release upload` 补传 x64 DMG。
+- Windows release ZIP 必须先将 artifact 目录重命名为 `Raiden` 再压缩，避免解压后出现 `artifacts/Raiden-Windows/`。
+- 重发同一 tag 的 release 资产时，先删除同名旧 asset，再移动 tag 或重新上传，避免 `softprops/action-gh-release` 同名冲突。
+- 移动已发布 tag 属于共享状态变更，仅用于补发/修复 release；操作前确认 tag 应指向当前 `main`。
 - 系统代理 `127.0.0.1:7890` 可能导致 MQTT 连接 reset；运行时需要通过 `JAVA_TOOL_OPTIONS` 或 shell 环境绕过内网 broker 地址。
