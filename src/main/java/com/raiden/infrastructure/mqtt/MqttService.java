@@ -4,6 +4,7 @@ import com.raiden.application.ChargingApplicationListener;
 import com.raiden.application.ChargingApplicationService;
 import com.raiden.application.MessagePublisher;
 import com.raiden.domain.ChargingStation;
+import com.raiden.platform.Disposable;
 import com.raiden.protocol.RaidenProtocolCodec;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
@@ -21,7 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public final class MqttService implements MessagePublisher {
+public final class MqttService implements MessagePublisher, Disposable {
 
   public interface MqttConnectionListener {
     void onMqttConnected(@NotNull String brokerUrl, @NotNull String clientId);
@@ -156,5 +157,10 @@ public final class MqttService implements MessagePublisher {
       myConnectionListener.onMqttLog("发布消息失败：" + e.getMessage());
       return false;
     }
+  }
+
+  @Override
+  public void dispose() {
+    closeForcibly();
   }
 }

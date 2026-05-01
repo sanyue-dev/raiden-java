@@ -5,6 +5,8 @@ import com.raiden.domain.ChargingPortSnapshot;
 import com.raiden.domain.ChargingPortState;
 import com.raiden.domain.ChargingStation;
 import com.raiden.infrastructure.mqtt.MqttService;
+import com.raiden.platform.Disposable;
+import com.raiden.platform.Disposer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -67,6 +69,8 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   private final JLabel mySelectionHintLabel;
   @NotNull
   private final ChargingStation myStation;
+  @NotNull
+  private final Disposable myFrameDisposable;
   @Nullable
   private volatile MqttService myMqttService;
   @Nullable
@@ -74,17 +78,26 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
 
   public MainFrame() {
     super("Raiden 模拟器");
-    setDefaultCloseOperation(EXIT_ON_CLOSE);
+    setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+    addWindowListener(new java.awt.event.WindowAdapter() {
+      @Override
+      public void windowClosing(java.awt.event.WindowEvent e) {
+        Disposer.dispose(myFrameDisposable);
+        dispose();
+        System.exit(0);
+      }
+    });
     setMinimumSize(new Dimension(1080, 640));
     setSize(1240, 760);
     setLocationRelativeTo(null);
 
     myStation = new ChargingStation();
+    myFrameDisposable = Disposer.newDisposable("MainFrame");
     myTableModel = new PortTableModel(myStation);
     myPortTable = new JTable(myTableModel);
     configureTable();
 
-    myBrokerField = new JTextField("tcp://192.168.2.66:23110", 25);
+    myBrokerField = new JTextField("tcp://61.145.180.130:23110", 25);
     myClientIdField = new JTextField("1000000520", 12);
     myPortCountSpinner = new JSpinner(new SpinnerNumberModel(2, 1, 12, 1));
     configureSpinner();
@@ -579,7 +592,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
         service.connect();
       }
       catch (Exception ex) {
-        try { service.closeForcibly(); } catch (Exception ignored) {}
+        service.closeForcibly();
         if (myConnectThread == Thread.currentThread()) {
           myMqttService = null;
           SwingUtilities.invokeLater(() -> {
@@ -595,9 +608,11 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
       }
 
       if (myConnectThread != Thread.currentThread()) {
-        myMqttService = null;
         service.closeForcibly();
+        return;
       }
+
+      Disposer.register(myFrameDisposable, service);
     }, "mqtt-connect-thread");
 
     myConnectThread = connectThread;
@@ -609,6 +624,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     myMqttService = null;
     if (service != null) {
       service.disconnect();
+      Disposer.dispose(service);
     }
     onDisconnected();
     appendLog("已断开连接");

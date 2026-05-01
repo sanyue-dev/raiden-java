@@ -22,6 +22,8 @@ MQTT 充电桩模拟客户端，Java Swing 版。
 
 代码位于 `src/main/java/com/raiden`，按 UI、应用服务、领域模型、协议编解码和 MQTT 基础设施分层。
 
+- **Disposable 体系**（`platform/`）：`Disposable` + `Disposer` 提供树形资源生命周期管理。`Disposer.register(parent, child)` 建立父子关系，`Disposer.dispose(parent)` 逆序销毁整棵子树。`MainFrame` 持有 `myFrameDisposable` 作为根，`MqttService` 注册为其子节点，窗口关闭时自动清理。
+
 - `Main` 设置 FlatLaf 主题，并通过 `SwingUtilities.invokeLater` 启动 `MainFrame`。
 - `ui/MainFrame` 负责 Swing 界面、连接表单、端口表格、日志和用户操作。它同时实现 `ChargingApplicationListener` 和 `MqttService.MqttConnectionListener`，持有 `ChargingStation` 并把端口状态展示交给 `PortTableModel` 和 `ChargingPortPresentation`。
 - `infrastructure/mqtt/MqttService` 封装 Eclipse Paho MQTT v3 客户端，使用 MQTT 3.1.1。它在构造时内部创建 `ChargingApplicationService`（而非外部注入）。消息收发均使用 QoS 0。订阅 topic 为 `cdz/{clientId}`，发布 topic 为 `upload/cdz/{clientId}`。每 60 秒通过 `ScheduledExecutorService` 调度一次周期状态上报。
