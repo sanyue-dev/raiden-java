@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 public final class MqttService implements MessagePublisher, Disposable {
@@ -60,7 +61,7 @@ public final class MqttService implements MessagePublisher, Disposable {
     myClientId = clientId;
     myConnectionListener = connectionListener;
     myApplicationService = new ChargingApplicationService(station, new RaidenProtocolCodec(), this, applicationListener);
-    myMessageExecutor = Executors.newSingleThreadExecutor(runnable -> new Thread(runnable, "mqtt-message-thread"));
+    myMessageExecutor = Executors.newSingleThreadExecutor(daemonThreadFactory("mqtt-message-thread"));
     mySubscribeTopic = "cdz/" + clientId;
     myPublishTopic = "upload/cdz/" + clientId;
   }
@@ -98,7 +99,7 @@ public final class MqttService implements MessagePublisher, Disposable {
     myClient.connect(options);
     myClient.subscribe(mySubscribeTopic, 0);
 
-    myReportTimer = Executors.newSingleThreadScheduledExecutor();
+    myReportTimer = Executors.newSingleThreadScheduledExecutor(daemonThreadFactory("mqtt-report-timer"));
     myReportTimer.scheduleAtFixedRate(myApplicationService::publishPeriodicReports, 60, 60, TimeUnit.SECONDS);
 
     myConnectionListener.onMqttConnected(myBrokerUrl, myClientId);
@@ -123,7 +124,7 @@ public final class MqttService implements MessagePublisher, Disposable {
     stopReportTimer();
     stopMessageExecutor();
     if (client != null) {
-      try { client.disconnectForcibly(0, 0); } catch (Exception ignored) {}
+      try { client.disconnectForcibly(1000, 1000); } catch (Exception ignored) {}
       try { client.close(); } catch (Exception ignored) {}
     }
   }
@@ -162,5 +163,13 @@ public final class MqttService implements MessagePublisher, Disposable {
   @Override
   public void dispose() {
     closeForcibly();
+  }
+
+  private static ThreadFactory daemonThreadFactory(@NotNull String name) {
+    return runnable -> {
+      Thread t = new Thread(runnable, name);
+      t.setDaemon(true);
+      return t;
+    };
   }
 }
