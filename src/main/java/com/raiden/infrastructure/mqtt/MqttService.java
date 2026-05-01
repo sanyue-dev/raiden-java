@@ -32,7 +32,7 @@ public final class MqttService implements MessagePublisher {
   }
 
   @Nullable
-  private MqttClient myClient;
+  private volatile MqttClient myClient;
   @NotNull
   private final String myBrokerUrl;
   @NotNull
@@ -113,6 +113,17 @@ public final class MqttService implements MessagePublisher {
     }
     catch (MqttException e) {
       myConnectionListener.onMqttLog("断开连接失败：" + e.getMessage());
+    }
+  }
+
+  public void closeForcibly() {
+    MqttClient client = myClient;
+    myClient = null;
+    stopReportTimer();
+    stopMessageExecutor();
+    if (client != null) {
+      try { client.disconnectForcibly(0, 0); } catch (Exception ignored) {}
+      try { client.close(); } catch (Exception ignored) {}
     }
   }
 

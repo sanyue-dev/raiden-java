@@ -69,6 +69,8 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   private final ChargingStation myStation;
   @Nullable
   private volatile MqttService myMqttService;
+  @Nullable
+  private volatile Thread myConnectThread;
 
   public MainFrame() {
     super("Raiden 模拟器");
@@ -461,7 +463,14 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   }
 
   private void bindActions() {
-    myConnectButton.addActionListener(e -> onConnect());
+    myConnectButton.addActionListener(e -> {
+      if (myConnectThread != null && myConnectThread.isAlive()) {
+        onCancelConnect();
+      }
+      else {
+        onConnect();
+      }
+    });
     myDisconnectButton.addActionListener(e -> onDisconnect());
     myCloseOrderButton.addActionListener(e -> onCloseOrder());
 
@@ -559,28 +568,40 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     int portCount = (Integer) myPortCountSpinner.getValue();
     initPorts(portCount);
 
-    myConnectButton.setEnabled(false);
+    myConnectButton.setText("取消");
     appendLog("正在连接 " + broker);
 
-    new Thread(() -> {
+    Thread connectThread = new Thread(() -> {
       MqttService service = new MqttService(broker, clientId, myStation, this, this);
       myMqttService = service;
+
       try {
         service.connect();
       }
       catch (Exception ex) {
-        myMqttService = null;
-        service.disconnect();
-        SwingUtilities.invokeLater(() -> {
-          appendLog("连接失败：" + ex.getMessage());
-          if (ex.getCause() != null) {
-            appendLog("  原因：" + ex.getCause().getMessage());
-          }
-          myConnectButton.setEnabled(true);
-          updateSelectionDetails();
-        });
+        try { service.closeForcibly(); } catch (Exception ignored) {}
+        if (myConnectThread == Thread.currentThread()) {
+          myMqttService = null;
+          SwingUtilities.invokeLater(() -> {
+            appendLog("连接失败：" + ex.getMessage());
+            if (ex.getCause() != null) {
+              appendLog("  原因：" + ex.getCause().getMessage());
+            }
+            myConnectButton.setText("连接");
+            updateSelectionDetails();
+          });
+        }
+        return;
       }
-    }, "mqtt-connect-thread").start();
+
+      if (myConnectThread != Thread.currentThread()) {
+        myMqttService = null;
+        service.closeForcibly();
+      }
+    }, "mqtt-connect-thread");
+
+    myConnectThread = connectThread;
+    connectThread.start();
   }
 
   private void onDisconnect() {
@@ -591,6 +612,16 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     }
     onDisconnected();
     appendLog("已断开连接");
+  }
+
+  private void onCancelConnect() {
+    myConnectThread = null;
+    myMqttService = null;
+
+    appendLog("已取消连接");
+    myConnectButton.setText("连接");
+    updateConnectionBadge(false);
+    updateSelectionDetails();
   }
 
   @Override
@@ -605,6 +636,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
 
   @Override
   public void onMqttConnected(@NotNull String brokerUrl, @NotNull String clientId) {
+    if (myConnectThread != Thread.currentThread()) return;
     appendLog("已连接到 " + brokerUrl + "，客户端 " + clientId);
     onConnected();
   }
@@ -621,7 +653,10 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   }
 
   public void onConnected() {
+    final Thread connectThread = myConnectThread;
     SwingUtilities.invokeLater(() -> {
+      if (myConnectThread != connectThread) return;
+      myConnectButton.setText("连接");
       myConnectButton.setEnabled(false);
       myDisconnectButton.setEnabled(true);
       myBrokerField.setEnabled(false);
@@ -634,6 +669,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
 
   public void onDisconnected() {
     SwingUtilities.invokeLater(() -> {
+      myConnectButton.setText("连接");
       myConnectButton.setEnabled(true);
       myDisconnectButton.setEnabled(false);
       myBrokerField.setEnabled(true);
