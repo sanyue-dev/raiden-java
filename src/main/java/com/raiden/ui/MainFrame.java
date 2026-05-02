@@ -124,7 +124,6 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
 
     Thread connectThread = new Thread(() -> {
       MqttService service = new MqttService(broker, clientId, myStation, this, this);
-      myMqttService = service;
 
       try {
         service.connect();
@@ -132,7 +131,6 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
       catch (Exception ex) {
         service.closeForcibly();
         if (myConnectThread == Thread.currentThread()) {
-          myMqttService = null;
           SwingUtilities.invokeLater(() -> {
             myLogPanel.appendLog("连接失败：" + ex.getMessage());
             if (ex.getCause() != null) {
@@ -150,6 +148,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
         return;
       }
 
+      myMqttService = service;
       Disposer.register(myFrameDisposable, service);
     }, "mqtt-connect-thread");
 
@@ -160,17 +159,20 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   private void onDisconnect() {
     MqttService service = myMqttService;
     myMqttService = null;
-    if (service != null) {
-      service.disconnect();
-      Disposer.dispose(service);
-    }
     onConnectionStateChanged(false);
     myLogPanel.appendLog("已断开连接");
+    if (service != null) {
+      Thread t = new Thread(() -> {
+        service.disconnect();
+        Disposer.dispose(service);
+      }, "mqtt-disconnect-thread");
+      t.setDaemon(true);
+      t.start();
+    }
   }
 
   private void onCancelConnect() {
     myConnectThread = null;
-    myMqttService = null;
     myLogPanel.appendLog("已取消连接");
     mySessionPanel.getConnectButton().setText("连接");
     mySessionPanel.updateConnectionBadge(false);
