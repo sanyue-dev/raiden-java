@@ -1,11 +1,6 @@
-package com.raiden.infrastructure.mqtt;
+package com.raiden.mqtt;
 
-import com.raiden.application.ChargingApplicationListener;
-import com.raiden.application.ChargingApplicationService;
-import com.raiden.application.MessagePublisher;
-import com.raiden.domain.ChargingStation;
 import com.raiden.platform.Disposable;
-import com.raiden.protocol.RaidenProtocolCodec;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
@@ -25,14 +20,6 @@ import java.util.concurrent.TimeUnit;
 
 public final class MqttService implements MessagePublisher, Disposable {
 
-  public interface MqttConnectionListener {
-    void onMqttConnected(@NotNull String brokerUrl, @NotNull String clientId);
-
-    void onMqttDisconnected(@Nullable Throwable cause);
-
-    void onMqttLog(@NotNull String message);
-  }
-
   @Nullable
   private volatile MqttClient myClient;
   @NotNull
@@ -42,7 +29,7 @@ public final class MqttService implements MessagePublisher, Disposable {
   @NotNull
   private final ChargingApplicationService myApplicationService;
   @NotNull
-  private final MqttConnectionListener myConnectionListener;
+  private final ConnectionListener myConnectionListener;
   @NotNull
   private final ExecutorService myMessageExecutor;
   @Nullable
@@ -54,13 +41,12 @@ public final class MqttService implements MessagePublisher, Disposable {
 
   public MqttService(@NotNull String brokerUrl,
                      @NotNull String clientId,
-                     @NotNull ChargingStation station,
-                     @NotNull ChargingApplicationListener applicationListener,
-                     @NotNull MqttConnectionListener connectionListener) {
+                     @NotNull ChargingApplicationService applicationService,
+                     @NotNull ConnectionListener connectionListener) {
     myBrokerUrl = brokerUrl;
     myClientId = clientId;
     myConnectionListener = connectionListener;
-    myApplicationService = new ChargingApplicationService(station, new RaidenProtocolCodec(), this, applicationListener);
+    myApplicationService = applicationService;
     myMessageExecutor = Executors.newSingleThreadExecutor(daemonThreadFactory("mqtt-message-thread"));
     mySubscribeTopic = "cdz/" + clientId;
     myPublishTopic = "upload/cdz/" + clientId;

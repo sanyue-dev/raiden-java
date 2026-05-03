@@ -20,16 +20,16 @@ MQTT 充电桩模拟客户端，Java Swing 版。
 
 ## 架构概览
 
-代码位于 `src/main/java/com/raiden`，按 UI、应用服务、领域模型、协议编解码和 MQTT 基础设施分层。
+代码位于 `src/main/java/com/raiden`，按功能划分包：`platform/`（通用基础设施）、`domain/`（纯领域模型）、`mqtt/`（MQTT 通信、协议编解码和业务调度）、`ui/`（Swing 界面）。
 
 - **Disposable 体系**（`platform/`）：`Disposable` + `Disposer` 提供树形资源生命周期管理。`Disposer.register(parent, child)` 建立父子关系，`Disposer.dispose(parent)` 逆序销毁整棵子树。`MainFrame` 持有 `myFrameDisposable` 作为根，`MqttService` 注册为其子节点，窗口关闭时自动清理。
 
 - `Main` 设置 FlatLaf 主题，并通过 `SwingUtilities.invokeLater` 启动 `MainFrame`。
-- `ui/MainFrame` 负责 Swing 界面、连接表单、端口表格、日志和用户操作。它同时实现 `ChargingApplicationListener` 和 `MqttService.MqttConnectionListener`，持有 `ChargingStation` 并把端口状态展示交给 `PortTableModel` 和 `ChargingPortPresentation`。
-- `infrastructure/mqtt/MqttService` 封装 Eclipse Paho MQTT v3 客户端，使用 MQTT 3.1.1。它在构造时内部创建 `ChargingApplicationService`（而非外部注入）。消息收发均使用 QoS 0。订阅 topic 为 `cdz/{clientId}`，发布 topic 为 `upload/cdz/{clientId}`。每 60 秒通过 `ScheduledExecutorService` 调度一次周期状态上报。
-- `application/ChargingApplicationService` 是业务入口，处理收到的协议消息、手动结束订单和周期上报；通过 `MessagePublisher` 接口发布消息（`MqttService` 实现该接口），通过 `ChargingApplicationListener` 回调通知 UI。
-- `domain/ChargingStation` 管理端口集合，`ChargingPort` 管理单个端口状态，`ChargingPortSnapshot` 用于跨线程读取稳定快照。端口状态为 `IDLE`、`CHARGING`、`CLOSING`。
-- `protocol/RaidenProtocolCodec` 使用手写的字符串解析（非 JSON 库），从 payload 中提取 `cdz`、`msg_id`、`data` 三个字段。`RaidenMessage` 是解析结果的不可变持有对象。
+- `ui/MainFrame` 负责 Swing 界面和用户交互。它同时实现 `ChargingApplicationListener`（业务事件回调）和 `ConnectionListener`（MQTT 连接状态回调），持有 `ChargingStation` 并把端口状态展示交给 `PortTableModel` 和 `ChargingPortPresentation`。连接时 `MainFrame` 创建 `ChargingApplicationService` 并注入 `MqttService`，再通过 `setMessagePublisher` 回绑发布能力。
+- `mqtt/ChargingApplicationService` 是业务入口，处理收到的协议消息、手动结束订单和周期上报；通过 `MessagePublisher` 接口发布消息（`MqttService` 实现该接口），通过 `ChargingApplicationListener` 回调通知 UI。
+- `mqtt/MqttService` 封装 Eclipse Paho MQTT v3 客户端，使用 MQTT 3.1.1。消息收发均使用 QoS 0。订阅 topic 为 `cdz/{clientId}`，发布 topic 为 `upload/cdz/{clientId}`。每 60 秒通过 `ScheduledExecutorService` 调度一次周期状态上报。
+- `mqtt/RaidenProtocolCodec` 使用手写的字符串解析（非 JSON 库），从 payload 中提取 `cdz`、`msg_id`、`data` 三个字段，并将 `cdz=101` 的 CSV `data` 解析为 `StartChargingParams` 结构化对象。`RaidenMessage` 是解析结果的不可变持有对象。
+- `domain/ChargingStation` 管理端口集合，`ChargingPort` 管理单个端口状态，`ChargingPortSnapshot` 用于跨线程读取稳定快照。`ChargingPortState` 为纯枚举，不含展示文本；UI 层通过 `ChargingPortPresentation` 映射状态到中文标签。
 
 ## 协议和线程约束
 

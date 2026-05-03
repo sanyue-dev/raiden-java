@@ -10,7 +10,11 @@ final class ChargingPortPresentation {
 
   @NotNull
   static String getStateLabel(@NotNull ChargingPortState state) {
-    return state.getLabel();
+    switch (state) {
+      case CHARGING: return "充电中";
+      case CLOSING: return "结束中";
+      default: return "空闲";
+    }
   }
 
   @NotNull

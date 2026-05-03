@@ -1,4 +1,4 @@
-package com.raiden.protocol;
+package com.raiden.mqtt;
 
 import com.raiden.domain.ChargingPortSnapshot;
 import org.jetbrains.annotations.NotNull;
@@ -16,6 +16,37 @@ public final class RaidenProtocolCodec {
         extractIntField(payload, "\"cdz\""),
         extractStringField(payload, "\"msg_id\""),
         extractStringField(payload, "\"data\"")
+    );
+  }
+
+  public static final class StartChargingParams {
+    public final int portNum;
+    public final int orderType;
+    public final int duration;
+    public final int kwhFee;
+    public final int unit;
+    public final int balance;
+
+    public StartChargingParams(int portNum, int orderType, int duration, int kwhFee, int unit, int balance) {
+      this.portNum = portNum;
+      this.orderType = orderType;
+      this.duration = duration;
+      this.kwhFee = kwhFee;
+      this.unit = unit;
+      this.balance = balance;
+    }
+  }
+
+  @NotNull
+  public StartChargingParams parseStartChargingData(@NotNull String data) {
+    String[] params = data.split(",");
+    return new StartChargingParams(
+        Integer.parseInt(params[0].trim()),
+        Integer.parseInt(params[1].trim()),
+        Integer.parseInt(params[2].trim()),
+        Integer.parseInt(params[4].trim()),
+        Integer.parseInt(params[5].trim()),
+        Integer.parseInt(params[6].trim())
     );
   }
 

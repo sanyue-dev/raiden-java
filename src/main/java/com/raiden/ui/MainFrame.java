@@ -1,9 +1,12 @@
 package com.raiden.ui;
 
-import com.raiden.application.ChargingApplicationListener;
 import com.raiden.domain.ChargingPortSnapshot;
 import com.raiden.domain.ChargingStation;
-import com.raiden.infrastructure.mqtt.MqttService;
+import com.raiden.mqtt.ChargingApplicationListener;
+import com.raiden.mqtt.ChargingApplicationService;
+import com.raiden.mqtt.ConnectionListener;
+import com.raiden.mqtt.MqttService;
+import com.raiden.mqtt.RaidenProtocolCodec;
 import com.raiden.platform.Disposable;
 import com.raiden.platform.Disposer;
 import org.jetbrains.annotations.NotNull;
@@ -13,7 +16,7 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 
-public final class MainFrame extends JFrame implements ChargingApplicationListener, MqttService.MqttConnectionListener {
+public final class MainFrame extends JFrame implements ChargingApplicationListener, ConnectionListener {
 
   @NotNull
   private final ChargingStation myStation;
@@ -122,7 +125,9 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     myLogPanel.appendLog("正在连接 " + broker);
 
     Thread connectThread = new Thread(() -> {
-      MqttService service = new MqttService(broker, clientId, myStation, this, this);
+      ChargingApplicationService appService = new ChargingApplicationService(myStation, new RaidenProtocolCodec(), MainFrame.this);
+      MqttService service = new MqttService(broker, clientId, appService, MainFrame.this);
+      appService.setMessagePublisher(service);
 
       try {
         service.connect();

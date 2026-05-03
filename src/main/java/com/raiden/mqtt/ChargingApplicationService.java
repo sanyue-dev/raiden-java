@@ -1,11 +1,9 @@
-package com.raiden.application;
+package com.raiden.mqtt;
 
 import com.raiden.domain.ChargingPort;
 import com.raiden.domain.ChargingPortSnapshot;
 import com.raiden.domain.ChargingPortState;
 import com.raiden.domain.ChargingStation;
-import com.raiden.protocol.RaidenMessage;
-import com.raiden.protocol.RaidenProtocolCodec;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.atomic.AtomicLong;
@@ -17,7 +15,7 @@ public final class ChargingApplicationService {
   @NotNull
   private final RaidenProtocolCodec myCodec;
   @NotNull
-  private final MessagePublisher myPublisher;
+  private volatile MessagePublisher myPublisher;
   @NotNull
   private final ChargingApplicationListener myListener;
   @NotNull
@@ -25,12 +23,14 @@ public final class ChargingApplicationService {
 
   public ChargingApplicationService(@NotNull ChargingStation station,
                                     @NotNull RaidenProtocolCodec codec,
-                                    @NotNull MessagePublisher publisher,
                                     @NotNull ChargingApplicationListener listener) {
     myStation = station;
     myCodec = codec;
-    myPublisher = publisher;
     myListener = listener;
+  }
+
+  public void setMessagePublisher(@NotNull MessagePublisher publisher) {
+    myPublisher = publisher;
   }
 
   public void handleIncomingPayload(@NotNull String payload) {
@@ -90,30 +90,24 @@ public final class ChargingApplicationService {
   }
 
   private void handleStartCharging(@NotNull String data, @NotNull String msgId) {
-    String[] params = data.split(",");
-    int portNum = Integer.parseInt(params[0].trim());
-    int orderType = Integer.parseInt(params[1].trim());
-    int duration = Integer.parseInt(params[2].trim());
-    int kwhFee = Integer.parseInt(params[4].trim());
-    int unit = Integer.parseInt(params[5].trim());
-    int balance = Integer.parseInt(params[6].trim());
+    RaidenProtocolCodec.StartChargingParams params = myCodec.parseStartChargingData(data);
 
-    ChargingPort port = myStation.findPort(portNum);
+    ChargingPort port = myStation.findPort(params.portNum);
     if (port == null) {
-      myListener.onApplicationLog("未找到端口 " + portNum);
+      myListener.onApplicationLog("未找到端口 " + params.portNum);
       return;
     }
 
     ChargingPortSnapshot snapshot = port.snapshot();
     if (snapshot.getState() != ChargingPortState.IDLE) {
-      myListener.onApplicationLog("端口 " + portNum + " 当前不是空闲状态，当前状态：" + snapshot.getState().getLabel());
+      myListener.onApplicationLog("端口 " + params.portNum + " 当前不是空闲状态，当前状态：" + snapshot.getState().name());
       return;
     }
 
-    port.startCharging(orderType, duration, kwhFee, unit, balance);
+    port.startCharging(params.orderType, params.duration, params.kwhFee, params.unit, params.balance);
     myPublisher.publish(myCodec.buildAckJson(port.snapshot(), msgId));
 
-    myListener.onApplicationLog("端口 " + portNum + " 开始充电，余额=" + balance);
+    myListener.onApplicationLog("端口 " + params.portNum + " 开始充电，余额=" + params.balance);
     myListener.onPortsChanged();
   }
 
