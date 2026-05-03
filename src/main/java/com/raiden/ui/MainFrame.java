@@ -63,8 +63,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     layoutComponents();
 
     initPorts(mySessionPanel.getPortCount());
-    mySessionPanel.updateConnectionBadge(false);
-    myInspectorPanel.updateFromSelection();
+    onConnectionStateChanged(ConnectionState.DISCONNECTED);
   }
 
   private void wirePanels() {
@@ -119,7 +118,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     int portCount = mySessionPanel.getPortCount();
     initPorts(portCount);
 
-    mySessionPanel.getConnectButton().setText("取消");
+    onConnectionStateChanged(ConnectionState.CONNECTING);
     myLogPanel.appendLog("正在连接 " + broker);
 
     Thread connectThread = new Thread(() -> {
@@ -136,8 +135,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
             if (ex.getCause() != null) {
               myLogPanel.appendLog("  原因：" + ex.getCause().getMessage());
             }
-            mySessionPanel.getConnectButton().setText("连接");
-            myInspectorPanel.updateFromSelection();
+            onConnectionStateChanged(ConnectionState.DISCONNECTED);
           });
         }
         return;
@@ -159,31 +157,40 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   private void onDisconnect() {
     MqttService service = myMqttService;
     myMqttService = null;
-    onConnectionStateChanged(false);
-    myLogPanel.appendLog("已断开连接");
     if (service != null) {
+      onConnectionStateChanged(ConnectionState.DISCONNECTING);
+      myLogPanel.appendLog("正在断开连接...");
       Thread t = new Thread(() -> {
         service.disconnect();
         Disposer.dispose(service);
+        onConnectionStateChanged(ConnectionState.DISCONNECTED);
+        myLogPanel.appendLog("已断开连接");
       }, "mqtt-disconnect-thread");
       t.setDaemon(true);
       t.start();
+    }
+    else {
+      onConnectionStateChanged(ConnectionState.DISCONNECTED);
     }
   }
 
   private void onCancelConnect() {
     myConnectThread = null;
     myLogPanel.appendLog("已取消连接");
-    mySessionPanel.getConnectButton().setText("连接");
-    mySessionPanel.updateConnectionBadge(false);
-    myInspectorPanel.updateFromSelection();
+    onConnectionStateChanged(ConnectionState.DISCONNECTED);
   }
 
-  private void onConnectionStateChanged(boolean connected) {
-    SwingUtilities.invokeLater(() -> {
-      mySessionPanel.onConnectionStateChanged(connected);
-      myInspectorPanel.onConnectionStateChanged(connected);
-    });
+  private void onConnectionStateChanged(@NotNull ConnectionState state) {
+    if (SwingUtilities.isEventDispatchThread()) {
+      mySessionPanel.onConnectionStateChanged(state);
+      myInspectorPanel.onConnectionStateChanged(state);
+    }
+    else {
+      SwingUtilities.invokeLater(() -> {
+        mySessionPanel.onConnectionStateChanged(state);
+        myInspectorPanel.onConnectionStateChanged(state);
+      });
+    }
   }
 
   @Override
@@ -201,13 +208,13 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   public void onMqttConnected(@NotNull String brokerUrl, @NotNull String clientId) {
     if (myConnectThread != Thread.currentThread()) return;
     myLogPanel.appendLog("已连接到 " + brokerUrl + "，客户端 " + clientId);
-    onConnectionStateChanged(true);
+    onConnectionStateChanged(ConnectionState.CONNECTED);
   }
 
   @Override
   public void onMqttDisconnected(@Nullable Throwable cause) {
     myMqttService = null;
-    onConnectionStateChanged(false);
+    onConnectionStateChanged(ConnectionState.DISCONNECTED);
   }
 
   @Override

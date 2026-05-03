@@ -95,24 +95,69 @@ public final class SessionPanel extends JPanel {
 
   public int getPortCount() { return (Integer) myPortCountSpinner.getValue(); }
 
-  public void onConnectionStateChanged(boolean connected) {
-    SwingUtilities.invokeLater(() -> {
-      updateConnectionBadge(connected);
-      myConnectButton.setText("连接");
-      myConnectButton.setEnabled(!connected);
-      myDisconnectButton.setEnabled(connected);
-      myBrokerField.setEnabled(!connected);
-      myClientIdField.setEnabled(!connected);
-      myPortCountSpinner.setEnabled(!connected);
-    });
+  public void onConnectionStateChanged(@NotNull ConnectionState state) {
+    updateConnectionBadge(state);
+    switch (state) {
+      case DISCONNECTED:
+        myConnectButton.setText("连接");
+        myConnectButton.setEnabled(true);
+        myDisconnectButton.setEnabled(false);
+        myBrokerField.setEnabled(true);
+        myClientIdField.setEnabled(true);
+        myPortCountSpinner.setEnabled(true);
+        break;
+      case CONNECTING:
+        myConnectButton.setText("取消");
+        myConnectButton.setEnabled(true);
+        myDisconnectButton.setEnabled(false);
+        myBrokerField.setEnabled(false);
+        myClientIdField.setEnabled(false);
+        myPortCountSpinner.setEnabled(false);
+        break;
+      case CONNECTED:
+        myConnectButton.setText("连接");
+        myConnectButton.setEnabled(false);
+        myDisconnectButton.setEnabled(true);
+        myBrokerField.setEnabled(false);
+        myClientIdField.setEnabled(false);
+        myPortCountSpinner.setEnabled(false);
+        break;
+      case DISCONNECTING:
+        myConnectButton.setText("连接");
+        myConnectButton.setEnabled(false);
+        myDisconnectButton.setEnabled(false);
+        myBrokerField.setEnabled(false);
+        myClientIdField.setEnabled(false);
+        myPortCountSpinner.setEnabled(false);
+        break;
+    }
   }
 
-  public void updateConnectionBadge(boolean connected) {
-    myConnectionBadge.setText(connected ? "在线" : "离线");
-    myConnectionBadge.setBackground(connected ? RaidenTheme.COLOR_ACCENT_SOFT : RaidenTheme.COLOR_WARNING_SOFT);
-    myConnectionBadge.setForeground(connected ? RaidenTheme.COLOR_ACCENT : RaidenTheme.COLOR_WARNING);
+  public void updateConnectionBadge(@NotNull ConnectionState state) {
+    Color fg, bg, border;
+    switch (state) {
+      case CONNECTED:
+        fg = RaidenTheme.COLOR_ACCENT;
+        bg = RaidenTheme.COLOR_ACCENT_SOFT;
+        border = RaidenTheme.COLOR_ACCENT;
+        break;
+      case CONNECTING:
+      case DISCONNECTING:
+        fg = RaidenTheme.COLOR_PENDING;
+        bg = RaidenTheme.COLOR_PENDING_SOFT;
+        border = RaidenTheme.COLOR_PENDING;
+        break;
+      default:
+        fg = RaidenTheme.COLOR_WARNING;
+        bg = RaidenTheme.COLOR_WARNING_SOFT;
+        border = RaidenTheme.COLOR_WARNING;
+        break;
+    }
+    myConnectionBadge.setText(state.getBadgeText());
+    myConnectionBadge.setBackground(bg);
+    myConnectionBadge.setForeground(fg);
     myConnectionBadge.setBorder(BorderFactory.createCompoundBorder(
-        new LineBorder(connected ? RaidenTheme.COLOR_ACCENT : RaidenTheme.COLOR_WARNING, 1, true),
+        new LineBorder(border, 1, true),
         new EmptyBorder(5, 8, 5, 8)
     ));
   }

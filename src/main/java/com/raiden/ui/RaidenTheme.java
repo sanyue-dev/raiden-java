@@ -23,6 +23,8 @@ public final class RaidenTheme {
   public static final Color COLOR_ACCENT_SOFT = new Color(0xD8EEE8);
   public static final Color COLOR_WARNING = new Color(0xB45432);
   public static final Color COLOR_WARNING_SOFT = new Color(0xF6E0D6);
+  public static final Color COLOR_PENDING = new Color(0x5A7D8A);
+  public static final Color COLOR_PENDING_SOFT = new Color(0xDEE8ED);
   public static final Color COLOR_IDLE = new Color(0x7B877F);
   public static final Color COLOR_ROW_ALT = new Color(0xF7FAF6);
   public static final Color COLOR_SELECTION = new Color(0xDCEBE4);

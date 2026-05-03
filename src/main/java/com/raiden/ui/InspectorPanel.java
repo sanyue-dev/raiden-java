@@ -25,13 +25,13 @@ public final class InspectorPanel extends JPanel {
   @NotNull
   private final PortsPanel myPortsPanel;
 
-  private boolean myConnected;
+  @NotNull
+  private ConnectionState myConnectionState = ConnectionState.DISCONNECTED;
   @NotNull
   private IntConsumer myCloseOrderAction = portNum -> {};
 
   public InspectorPanel(@NotNull PortsPanel portsPanel) {
     myPortsPanel = portsPanel;
-    myConnected = false;
 
     setLayout(new BorderLayout(0, 12));
     RaidenTheme.applyCardStyle(this);
@@ -96,10 +96,16 @@ public final class InspectorPanel extends JPanel {
     mySelectedStatusValue.setForeground(RaidenTheme.resolveStatusColor(state));
     mySelectedBalanceValue.setText(ChargingPortPresentation.getBalanceText(snapshot));
 
-    boolean canClose = myConnected && state == ChargingPortState.CHARGING;
+    boolean canClose = myConnectionState == ConnectionState.CONNECTED && state == ChargingPortState.CHARGING;
     myCloseOrderButton.setEnabled(canClose);
 
-    if (!myConnected) {
+    if (myConnectionState == ConnectionState.CONNECTING) {
+      setSelectionHint("正在建立连接，请等待连接完成。");
+    }
+    else if (myConnectionState == ConnectionState.DISCONNECTING) {
+      setSelectionHint("正在断开连接，请等待断开完成。");
+    }
+    else if (myConnectionState != ConnectionState.CONNECTED) {
       setSelectionHint("请先连接服务器，再发送手动结束订单。");
     }
     else if (state == ChargingPortState.CHARGING) {
@@ -113,8 +119,8 @@ public final class InspectorPanel extends JPanel {
     }
   }
 
-  public void onConnectionStateChanged(boolean connected) {
-    myConnected = connected;
+  public void onConnectionStateChanged(@NotNull ConnectionState state) {
+    myConnectionState = state;
     updateFromSelection();
   }
 
