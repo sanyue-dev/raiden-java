@@ -3,10 +3,9 @@ package com.raiden.ui;
 import com.raiden.domain.ChargingPortSnapshot;
 import com.raiden.domain.ChargingStation;
 import com.raiden.mqtt.ChargingApplicationListener;
-import com.raiden.mqtt.ChargingApplicationService;
 import com.raiden.mqtt.ConnectionListener;
-import com.raiden.mqtt.MqttService;
-import com.raiden.mqtt.RaidenProtocolCodec;
+import com.raiden.mqtt.MqttConnectionController;
+import com.raiden.mqtt.MqttConnectionStatus;
 import com.raiden.platform.Disposable;
 import com.raiden.platform.Disposer;
 import org.jetbrains.annotations.NotNull;
@@ -24,10 +23,10 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   private final PortTableModel myTableModel;
   @NotNull
   private final Disposable myFrameDisposable;
-  @Nullable
-  private volatile MqttService myMqttService;
-  @Nullable
-  private volatile Thread myConnectThread;
+  @NotNull
+  private final MqttConnectionController myConnectionController;
+  @NotNull
+  private ConnectionState myConnectionState = ConnectionState.DISCONNECTED;
 
   @NotNull
   private final SessionPanel mySessionPanel;
@@ -56,6 +55,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     myStation = new ChargingStation();
     myTableModel = new PortTableModel(myStation);
     myFrameDisposable = Disposer.newDisposable("MainFrame");
+    myConnectionController = new MqttConnectionController(myStation, myFrameDisposable, this, this);
 
     myLogPanel = new LogPanel();
     myPortsPanel = new PortsPanel(myTableModel);
@@ -77,7 +77,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     });
 
     mySessionPanel.getConnectButton().addActionListener(e -> {
-      if (myConnectThread != null && myConnectThread.isAlive()) {
+      if (myConnectionState == ConnectionState.CONNECTING) {
         onCancelConnect();
       }
       else {
@@ -88,19 +88,12 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     mySessionPanel.getDisconnectButton().addActionListener(e -> onDisconnect());
 
     mySessionPanel.getPortCountSpinner().addChangeListener(e -> {
-      if (myMqttService == null) {
+      if (myConnectionState == ConnectionState.DISCONNECTED) {
         initPorts(mySessionPanel.getPortCount());
       }
     });
 
-    myInspectorPanel.setCloseOrderAction(portNumber -> {
-      MqttService service = myMqttService;
-      if (service == null) {
-        myLogPanel.appendLog("请先连接服务器");
-        return;
-      }
-      service.manualClose(portNumber);
-    });
+    myInspectorPanel.setCloseOrderAction(portNumber -> myConnectionController.manualClose(portNumber));
   }
 
   private void initPorts(int count) {
@@ -118,84 +111,58 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
       return;
     }
 
-    int portCount = mySessionPanel.getPortCount();
-    initPorts(portCount);
-
-    onConnectionStateChanged(ConnectionState.CONNECTING);
-    myLogPanel.appendLog("正在连接 " + broker);
-
-    Thread connectThread = new Thread(() -> {
-      ChargingApplicationService appService = new ChargingApplicationService(myStation, new RaidenProtocolCodec(), MainFrame.this);
-      MqttService service = new MqttService(broker, clientId, appService, MainFrame.this);
-      appService.setMessagePublisher(service);
-
-      try {
-        service.connect();
-      }
-      catch (Exception ex) {
-        service.closeForcibly();
-        if (myConnectThread == Thread.currentThread()) {
-          SwingUtilities.invokeLater(() -> {
-            myLogPanel.appendLog("连接失败：" + ex.getMessage());
-            if (ex.getCause() != null) {
-              myLogPanel.appendLog("  原因：" + ex.getCause().getMessage());
-            }
-            onConnectionStateChanged(ConnectionState.DISCONNECTED);
-          });
-        }
-        return;
-      }
-
-      if (myConnectThread != Thread.currentThread()) {
-        service.closeForcibly();
-        return;
-      }
-
-      myMqttService = service;
-      Disposer.register(myFrameDisposable, service);
-    }, "mqtt-connect-thread");
-
-    myConnectThread = connectThread;
-    connectThread.start();
+    if (myConnectionController.connect(broker, clientId, mySessionPanel.getPortCount())) {
+      myPortsPanel.clearSelection();
+      myInspectorPanel.updateFromSelection();
+    }
   }
 
   private void onDisconnect() {
-    MqttService service = myMqttService;
-    myMqttService = null;
-    if (service != null) {
-      onConnectionStateChanged(ConnectionState.DISCONNECTING);
-      myLogPanel.appendLog("正在断开连接...");
-      Thread t = new Thread(() -> {
-        service.disconnect();
-        Disposer.dispose(service);
-        onConnectionStateChanged(ConnectionState.DISCONNECTED);
-        myLogPanel.appendLog("已断开连接");
-      }, "mqtt-disconnect-thread");
-      t.setDaemon(true);
-      t.start();
-    }
-    else {
-      onConnectionStateChanged(ConnectionState.DISCONNECTED);
-    }
+    myConnectionController.disconnect();
   }
 
   private void onCancelConnect() {
-    myConnectThread = null;
-    myLogPanel.appendLog("已取消连接");
-    onConnectionStateChanged(ConnectionState.DISCONNECTED);
+    myConnectionController.cancelConnect();
+  }
+
+  @Override
+  public void onMqttConnectionStatusChanged(@NotNull MqttConnectionStatus status, @Nullable Throwable cause) {
+    if (!SwingUtilities.isEventDispatchThread()) {
+      SwingUtilities.invokeLater(() -> onMqttConnectionStatusChanged(status, cause));
+      return;
+    }
+
+    switch (status) {
+      case CONNECTING:
+        onConnectionStateChanged(ConnectionState.CONNECTING);
+        break;
+      case CONNECTED:
+        onConnectionStateChanged(ConnectionState.CONNECTED);
+        break;
+      case DISCONNECTING:
+        onConnectionStateChanged(ConnectionState.DISCONNECTING);
+        break;
+      case DISCONNECTED:
+      case CONNECTION_FAILED:
+      case CONNECTION_LOST:
+        onConnectionStateChanged(ConnectionState.DISCONNECTED);
+        break;
+    }
+  }
+
+  @Override
+  public void onMqttLog(@NotNull String message) {
+    myLogPanel.appendLog(message);
   }
 
   private void onConnectionStateChanged(@NotNull ConnectionState state) {
-    if (SwingUtilities.isEventDispatchThread()) {
-      mySessionPanel.onConnectionStateChanged(state);
-      myInspectorPanel.onConnectionStateChanged(state);
+    if (!SwingUtilities.isEventDispatchThread()) {
+      SwingUtilities.invokeLater(() -> onConnectionStateChanged(state));
+      return;
     }
-    else {
-      SwingUtilities.invokeLater(() -> {
-        mySessionPanel.onConnectionStateChanged(state);
-        myInspectorPanel.onConnectionStateChanged(state);
-      });
-    }
+    myConnectionState = state;
+    mySessionPanel.onConnectionStateChanged(state);
+    myInspectorPanel.onConnectionStateChanged(state);
   }
 
   @Override
@@ -207,24 +174,6 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
   public void onPortsChanged() {
     myPortsPanel.refreshTable();
     SwingUtilities.invokeLater(() -> myInspectorPanel.updateFromSelection());
-  }
-
-  @Override
-  public void onMqttConnected(@NotNull String brokerUrl, @NotNull String clientId) {
-    if (myConnectThread != Thread.currentThread()) return;
-    myLogPanel.appendLog("已连接到 " + brokerUrl + "，客户端 " + clientId);
-    onConnectionStateChanged(ConnectionState.CONNECTED);
-  }
-
-  @Override
-  public void onMqttDisconnected(@Nullable Throwable cause) {
-    myMqttService = null;
-    onConnectionStateChanged(ConnectionState.DISCONNECTED);
-  }
-
-  @Override
-  public void onMqttLog(@NotNull String message) {
-    myLogPanel.appendLog(message);
   }
 
   private void layoutComponents() {
@@ -281,4 +230,5 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
     panel.add(component, BorderLayout.CENTER);
     return panel;
   }
+
 }

@@ -1,9 +1,11 @@
 package com.raiden.mqtt;
 
 import com.raiden.platform.Disposable;
+import org.eclipse.paho.client.mqttv3.IMqttActionListener;
+import org.eclipse.paho.client.mqttv3.IMqttToken;
+import org.eclipse.paho.client.mqttv3.MqttAsyncClient;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
-import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
@@ -21,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 public final class MqttService implements MessagePublisher, Disposable {
 
   @Nullable
-  private volatile MqttClient myClient;
+  private volatile MqttAsyncClient myClient;
   @NotNull
   private final String myBrokerUrl;
   @NotNull
@@ -53,7 +55,8 @@ public final class MqttService implements MessagePublisher, Disposable {
   }
 
   public void connect() throws MqttException {
-    myClient = new MqttClient(myBrokerUrl, myClientId, new MemoryPersistence());
+    MqttAsyncClient client = new MqttAsyncClient(myBrokerUrl, myClientId, new MemoryPersistence());
+    myClient = client;
     MqttConnectOptions options = new MqttConnectOptions();
     options.setAutomaticReconnect(false);
     options.setCleanSession(true);
@@ -61,14 +64,12 @@ public final class MqttService implements MessagePublisher, Disposable {
     options.setKeepAliveInterval(60);
     options.setMqttVersion(MqttConnectOptions.MQTT_VERSION_3_1_1);
 
-    myClient.setCallback(new MqttCallback() {
+    client.setCallback(new MqttCallback() {
       @Override
       public void connectionLost(@Nullable Throwable cause) {
-        stopReportTimer();
-        stopMessageExecutor();
-        myClient = null;
+        cleanupClient(client);
         myConnectionListener.onMqttLog("连接已中断：" + cause);
-        myConnectionListener.onMqttDisconnected(cause);
+        myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.CONNECTION_LOST, cause);
       }
 
       @Override
@@ -82,36 +83,66 @@ public final class MqttService implements MessagePublisher, Disposable {
       public void deliveryComplete(@Nullable IMqttDeliveryToken token) {}
     });
 
-    myClient.connect(options);
-    myClient.subscribe(mySubscribeTopic, 0);
+    myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.CONNECTING, null);
+    client.connect(options, null, new IMqttActionListener() {
+      @Override
+      public void onSuccess(@Nullable IMqttToken asyncActionToken) {
+        subscribeAfterConnect(client);
+      }
 
-    myReportTimer = Executors.newSingleThreadScheduledExecutor(daemonThreadFactory("mqtt-report-timer"));
-    myReportTimer.scheduleAtFixedRate(myApplicationService::publishPeriodicReports, 60, 60, TimeUnit.SECONDS);
-
-    myConnectionListener.onMqttConnected(myBrokerUrl, myClientId);
+      @Override
+      public void onFailure(@Nullable IMqttToken asyncActionToken, @Nullable Throwable exception) {
+        cleanupClient(client);
+        myConnectionListener.onMqttConnectionStatusChanged(
+            MqttConnectionStatus.CONNECTION_FAILED,
+            exception == null ? new MqttException(MqttException.REASON_CODE_CLIENT_EXCEPTION) : exception
+        );
+      }
+    });
   }
 
   public void disconnect() {
+    myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.DISCONNECTING, null);
+    MqttAsyncClient client = myClient;
+    stopReportTimer();
+    stopMessageExecutor();
+    if (client == null) {
+      myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.DISCONNECTED, null);
+      return;
+    }
     try {
-      stopReportTimer();
-      stopMessageExecutor();
-      if (myClient != null && myClient.isConnected()) {
-        myClient.disconnect();
+      if (client.isConnected()) {
+        client.disconnect(0, null, new IMqttActionListener() {
+          @Override
+          public void onSuccess(@Nullable IMqttToken asyncActionToken) {
+            cleanupClient(client);
+            myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.DISCONNECTED, null);
+          }
+
+          @Override
+          public void onFailure(@Nullable IMqttToken asyncActionToken, @Nullable Throwable exception) {
+            myConnectionListener.onMqttLog("断开连接失败：" + messageOf(exception) + "，正在强制关闭");
+            closeForcibly();
+            myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.DISCONNECTED, exception);
+          }
+        });
+      }
+      else {
+        cleanupClient(client);
+        myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.DISCONNECTED, null);
       }
     }
     catch (MqttException e) {
-      myConnectionListener.onMqttLog("断开连接失败：" + e.getMessage());
+      myConnectionListener.onMqttLog("断开连接失败：" + e.getMessage() + "，正在强制关闭");
+      closeForcibly();
+      myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.DISCONNECTED, e);
     }
   }
 
   public void closeForcibly() {
-    MqttClient client = myClient;
-    myClient = null;
-    stopReportTimer();
-    stopMessageExecutor();
+    MqttAsyncClient client = myClient;
     if (client != null) {
-      try { client.disconnectForcibly(1000, 1000); } catch (Exception ignored) {}
-      try { client.close(); } catch (Exception ignored) {}
+      closeClientForcibly(client);
     }
   }
 
@@ -132,12 +163,13 @@ public final class MqttService implements MessagePublisher, Disposable {
 
   @Override
   public boolean publish(@NotNull String json) {
-    if (myClient == null || !myClient.isConnected()) {
+    MqttAsyncClient client = myClient;
+    if (client == null || !client.isConnected()) {
       myConnectionListener.onMqttLog("发布消息失败：MQTT 未连接");
       return false;
     }
     try {
-      myClient.publish(myPublishTopic, json.getBytes(StandardCharsets.UTF_8), 0, false);
+      client.publish(myPublishTopic, json.getBytes(StandardCharsets.UTF_8), 0, false);
       return true;
     }
     catch (MqttException e) {
@@ -157,5 +189,57 @@ public final class MqttService implements MessagePublisher, Disposable {
       t.setDaemon(true);
       return t;
     };
+  }
+
+  private void subscribeAfterConnect(@NotNull MqttAsyncClient client) {
+    if (myClient != client) return;
+    try {
+      client.subscribe(mySubscribeTopic, 0, null, new IMqttActionListener() {
+        @Override
+        public void onSuccess(@Nullable IMqttToken asyncActionToken) {
+          if (myClient != client) return;
+          myReportTimer = Executors.newSingleThreadScheduledExecutor(daemonThreadFactory("mqtt-report-timer"));
+          myReportTimer.scheduleAtFixedRate(myApplicationService::publishPeriodicReports, 60, 60, TimeUnit.SECONDS);
+          myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.CONNECTED, null);
+        }
+
+        @Override
+        public void onFailure(@Nullable IMqttToken asyncActionToken, @Nullable Throwable exception) {
+          closeClientForcibly(client);
+          myConnectionListener.onMqttConnectionStatusChanged(
+              MqttConnectionStatus.CONNECTION_FAILED,
+              exception == null ? new MqttException(MqttException.REASON_CODE_CLIENT_EXCEPTION) : exception
+          );
+        }
+      });
+    }
+    catch (MqttException e) {
+      closeClientForcibly(client);
+      myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.CONNECTION_FAILED, e);
+    }
+  }
+
+  private void cleanupClient(@NotNull MqttAsyncClient client) {
+    if (myClient == client) {
+      myClient = null;
+    }
+    stopReportTimer();
+    stopMessageExecutor();
+    try { client.close(); } catch (Exception ignored) {}
+  }
+
+  private void closeClientForcibly(@NotNull MqttAsyncClient client) {
+    if (myClient == client) {
+      myClient = null;
+    }
+    stopReportTimer();
+    stopMessageExecutor();
+    try { client.disconnectForcibly(1000, 1000); } catch (Exception ignored) {}
+    try { client.close(); } catch (Exception ignored) {}
+  }
+
+  @NotNull
+  private static String messageOf(@Nullable Throwable exception) {
+    return exception == null ? "未知错误" : exception.getMessage();
   }
 }
