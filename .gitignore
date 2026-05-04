@@ -1,6 +1,4 @@
 .ace-tool/
-.claude/settings.local.json
-CLAUDE.local.md
 target/
 dependency-reduced-pom.xml
 *.db
