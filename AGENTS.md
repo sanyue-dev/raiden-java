@@ -25,3 +25,17 @@ Place tests under `src/test/java` mirroring the production package structure. Us
 ## Commit & Pull Request Guidelines
 
 Recent history follows Conventional Commits, such as `feat: support cancelling in-progress MQTT connections`, `fix: resolve cancel race condition and EDT blocking on disconnect`, and `refactor: consolidate application/protocol/infrastructure into mqtt package`. Keep commits focused and use `feat:`, `fix:`, `refactor:`, or `docs:` as appropriate. Pull requests should include a short summary, testing performed, linked issues if applicable, and screenshots or screen recordings for visible UI changes.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues for `sanyue-dev/raiden-java`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage uses the default category and state label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo with root `CONTEXT.md` as the domain glossary. See `docs/agents/domain.md`.
