@@ -13,6 +13,7 @@ public final class Disposer {
 
   private static final Object TREE_LOCK = new Object();
   private static final Map<Disposable, Node> ourObject2NodeMap = new IdentityHashMap<>();
+  private static final Map<Disposable, Boolean> ourDisposingObjects = new IdentityHashMap<>();
 
   @NotNull
   public static Disposable newDisposable() {
@@ -46,76 +47,23 @@ public final class Disposer {
     return result;
   }
 
-  @NotNull
-  public static CheckedDisposable newCheckedDisposable() {
-    return new CheckedDisposableImpl();
-  }
-
-  @NotNull
-  public static CheckedDisposable newCheckedDisposable(@NotNull String debugName) {
-    return new NamedCheckedDisposable(debugName);
-  }
-
-  @NotNull
-  public static CheckedDisposable newCheckedDisposable(@NotNull Disposable parentDisposable) {
-    CheckedDisposable disposable = newCheckedDisposable();
-    register(parentDisposable, disposable);
-    return disposable;
-  }
-
-  @NotNull
-  public static CheckedDisposable newCheckedDisposable(@NotNull Disposable parentDisposable, @NotNull String debugName) {
-    CheckedDisposable disposable = newCheckedDisposable(debugName);
-    register(parentDisposable, disposable);
-    return disposable;
-  }
-
   public static void register(@NotNull Disposable parent, @NotNull Disposable child) {
     if (parent == child) {
       throw new IllegalArgumentException("Cannot register disposable to itself: " + parent);
     }
     synchronized (TREE_LOCK) {
-      if (isDisposed(parent)) {
-        throw new IllegalStateException("Parent has already been disposed: " + parent +
+      if (ourDisposingObjects.containsKey(parent)) {
+        throw new IllegalStateException("Parent is being disposed: " + parent +
                                         ", cannot register child: " + child);
       }
 
-      // Re-registering a disposed CheckedDisposable is likely a bug
-      if (child instanceof CheckedDisposableImpl && ((CheckedDisposableImpl) child).isDisposed) {
-        throw new IllegalStateException("Cannot re-register a disposed CheckedDisposable: " + child);
-      }
-
       Node parentNode = ourObject2NodeMap.computeIfAbsent(parent, Node::new);
       Node childNode = ourObject2NodeMap.get(child);
       if (childNode != null) {
-        // Remove from old parent first (even if same parent, to avoid duplicates)
-        if (childNode.myParent != null) {
-          childNode.myParent.myChildren.remove(childNode);
+        if (childNode.myParent == parentNode) {
+          return;
         }
         checkNotAncestor(childNode, parentNode);
-        childNode.myParent = parentNode;
-      }
-      else {
-        childNode = new Node(child);
-        childNode.myParent = parentNode;
-        ourObject2NodeMap.put(child, childNode);
-      }
-      parentNode.myChildren.add(childNode);
-    }
-  }
-
-  public static boolean tryRegister(@NotNull Disposable parent, @NotNull Disposable child) {
-    if (parent == child) return false;
-    synchronized (TREE_LOCK) {
-      if (isDisposed(parent)) {
-        return false;
-      }
-      Node parentNode = ourObject2NodeMap.computeIfAbsent(parent, Node::new);
-      Node childNode = ourObject2NodeMap.get(child);
-      if (childNode != null && childNode.myParent == parentNode) {
-        return true;
-      }
-      if (childNode != null) {
         if (childNode.myParent != null) {
           childNode.myParent.myChildren.remove(childNode);
         }
@@ -127,7 +75,6 @@ public final class Disposer {
         ourObject2NodeMap.put(child, childNode);
       }
       parentNode.myChildren.add(childNode);
-      return true;
     }
   }
 
@@ -136,7 +83,7 @@ public final class Disposer {
     synchronized (TREE_LOCK) {
       Node node = ourObject2NodeMap.remove(disposable);
       if (node == null) {
-        disposables = null;
+        disposables = List.of(disposable);
       }
       else {
         if (node.myParent != null) {
@@ -145,12 +92,24 @@ public final class Disposer {
         disposables = new ArrayList<>();
         collectAndRemoveNodes(node, disposables);
       }
-    }
-    if (disposables == null) {
-      disposable.dispose();
-      return;
+      for (Disposable d : disposables) {
+        ourDisposingObjects.put(d, Boolean.TRUE);
+      }
     }
 
+    try {
+      disposeAll(disposables);
+    }
+    finally {
+      synchronized (TREE_LOCK) {
+        for (Disposable d : disposables) {
+          ourDisposingObjects.remove(d);
+        }
+      }
+    }
+  }
+
+  private static void disposeAll(@NotNull List<Disposable> disposables) {
     List<Throwable> exceptions = null;
     for (int i = disposables.size() - 1; i >= 0; i--) {
       Disposable d = disposables.get(i);
@@ -183,20 +142,6 @@ public final class Disposer {
     }
   }
 
-  public static boolean isDisposed(@NotNull Disposable disposable) {
-    if (disposable instanceof CheckedDisposable) {
-      return ((CheckedDisposable) disposable).isDisposed();
-    }
-    synchronized (TREE_LOCK) {
-      Node node = ourObject2NodeMap.get(disposable);
-      return node != null && node.myDisposed;
-    }
-  }
-
-  /**
-   * Checks that {@code descendant} is not an ancestor of {@code node},
-   * which would create a cycle in the tree.
-   */
   private static void checkNotAncestor(@NotNull Node descendant, @NotNull Node node) {
     for (Node current = node; current != null; current = current.myParent) {
       if (current == descendant) {
@@ -208,7 +153,6 @@ public final class Disposer {
   }
 
   private static void collectAndRemoveNodes(@NotNull Node node, @NotNull List<Disposable> result) {
-    node.myDisposed = true;
     List<Node> children = node.myChildren;
     for (int i = children.size() - 1; i >= 0; i--) {
       Node child = children.get(i);
@@ -223,42 +167,9 @@ public final class Disposer {
     final Disposable myDisposable;
     Node myParent;
     final List<Node> myChildren = new ArrayList<>();
-    boolean myDisposed;
 
     Node(@NotNull Disposable disposable) {
       myDisposable = disposable;
-    }
-  }
-
-  static class CheckedDisposableImpl implements CheckedDisposable {
-    volatile boolean isDisposed;
-
-    @Override
-    public boolean isDisposed() {
-      return isDisposed;
-    }
-
-    @Override
-    public void dispose() {
-      isDisposed = true;
-    }
-
-    @Override
-    public String toString() {
-      return "CheckedDisposable{isDisposed=" + isDisposed + "}";
-    }
-  }
-
-  private static final class NamedCheckedDisposable extends CheckedDisposableImpl {
-    private final String myDebugName;
-
-    NamedCheckedDisposable(@NotNull String debugName) {
-      myDebugName = debugName;
-    }
-
-    @Override
-    public String toString() {
-      return myDebugName + "{isDisposed=" + isDisposed + "}";
     }
   }
 }
