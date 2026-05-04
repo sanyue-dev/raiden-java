@@ -22,7 +22,7 @@ java -jar target/raiden-java-1.0.0.jar
 
 启动后出现 Swing 图形界面，在连接表单中填写 MQTT Broker 地址和客户端 ID，点击连接即可。连接成功后会自动订阅 `cdz/{clientId}` 主题并开始周期性状态上报。
 
-界面中的端口表格实时显示各充电端口状态，支持手动结束充电订单。
+界面中的端口表格实时显示各充电端口状态，支持手动停充并通知服务端。断开连接和重新连接都会保留当前端口状态；只有在断开状态下修改端口数量才会重建端口。事件日志会显示 `MQTT IN`、`MQTT OUT` 和 `APP` 记录，方便对照原始协议消息与本地状态变化；联调前可清空当前日志。
 
 ## 通信协议
 
@@ -33,11 +33,17 @@ java -jar target/raiden-java-1.0.0.jar
 | `cdz=101` | 服务端 → 客户端 | 启动充电 |
 | `cdz=102` | 客户端 → 服务端 | 周期状态上报 |
 | `cdz=104` | 服务端 → 客户端 | 计费结束 |
-| `cdz=203` | 客户端 → 服务端 | 手动关闭订单 |
+| `cdz=203` | 客户端 → 服务端 | 手动停充通知 |
 
 协议消息使用自定义文本格式（非 JSON），包含 `cdz`、`msg_id`、`data` 三个字段。`msg_id` 在响应中必须原样回传。
 
+`cdz=101` 启动充电响应复用服务端下发的 `msg_id`：本地开启成功时 `data` 为 `portNum,1`；无法开启时当前暂按 `portNum,0` 处理，待服务端协议确认后再调整。
+
+`cdz=203` 手动停充通知当前实现为 `port,0,0,0,0,0,balance,1`，其中占位字段和最后一位 `1` 的含义待服务端协议确认。
+
 ## 项目结构
+
+更详细的包职责和依赖方向见 [docs/architecture.md](docs/architecture.md)，端口和连接状态机见 [docs/state-machine.md](docs/state-machine.md)。
 
 ```
 src/main/java/com/raiden/
@@ -50,7 +56,7 @@ src/main/java/com/raiden/
 │   ├── ChargingApplicationService.java  # 业务逻辑入口
 │   ├── ChargingApplicationListener.java # UI 回调接口
 │   └── MessagePublisher.java            # 消息发布接口
-├── domain/
+├── model/
 │   ├── ChargingStation.java          # 充电桩（端口集合）
 │   ├── ChargingPort.java             # 单个充电端口
 │   ├── ChargingPortSnapshot.java     # 端口状态快照（不可变）
@@ -58,9 +64,14 @@ src/main/java/com/raiden/
 ├── protocol/
 │   ├── RaidenProtocolCodec.java      # 协议编解码
 │   └── RaidenMessage.java            # 协议消息对象
-└── infrastructure/
-    └── mqtt/
-        └── MqttService.java           # MQTT 客户端封装
+├── mqtt/
+│   ├── MqttConnectionController.java # MQTT 连接生命周期控制
+│   ├── MqttService.java              # MQTT 客户端封装
+│   ├── ConnectionListener.java       # MQTT 连接回调接口
+│   └── MqttConnectionStatus.java     # MQTT 连接状态枚举
+└── platform/
+    ├── Disposable.java               # 生命周期接口
+    └── Disposer.java                 # 树形资源释放工具
 ```
 
 ## 依赖

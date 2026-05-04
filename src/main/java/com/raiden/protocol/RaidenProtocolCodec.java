@@ -1,6 +1,6 @@
 package com.raiden.protocol;
 
-import com.raiden.domain.ChargingPortSnapshot;
+import com.raiden.model.ChargingPortSnapshot;
 import org.jetbrains.annotations.NotNull;
 
 public final class RaidenProtocolCodec {
@@ -19,9 +19,41 @@ public final class RaidenProtocolCodec {
     );
   }
 
+  public static final class StartChargingParams {
+    public final int portNum;
+    public final int orderType;
+    public final int duration;
+    public final int kwhFee;
+    public final int unit;
+    public final int balance;
+
+    public StartChargingParams(int portNum, int orderType, int duration, int kwhFee, int unit, int balance) {
+      this.portNum = portNum;
+      this.orderType = orderType;
+      this.duration = duration;
+      this.kwhFee = kwhFee;
+      this.unit = unit;
+      this.balance = balance;
+    }
+  }
+
   @NotNull
-  public String buildAckJson(@NotNull ChargingPortSnapshot port, @NotNull String msgId) {
-    return "{\"cdz\":" + CDZ_START_CHARGING + ",\"msg_id\":\"" + msgId + "\",\"data\":\"" + port.getPortNumber() + ",1\"}";
+  public StartChargingParams parseStartChargingData(@NotNull String data) {
+    String[] params = data.split(",");
+    return new StartChargingParams(
+        Integer.parseInt(params[0].trim()),
+        Integer.parseInt(params[1].trim()),
+        Integer.parseInt(params[2].trim()),
+        Integer.parseInt(params[4].trim()),
+        Integer.parseInt(params[5].trim()),
+        Integer.parseInt(params[6].trim())
+    );
+  }
+
+  @NotNull
+  public String buildStartChargingResponseJson(int portNumber, @NotNull String msgId, boolean success) {
+    return "{\"cdz\":" + CDZ_START_CHARGING + ",\"msg_id\":\"" + msgId + "\",\"data\":\"" +
+           portNumber + "," + (success ? 1 : 0) + "\"}";
   }
 
   @NotNull
@@ -32,9 +64,8 @@ public final class RaidenProtocolCodec {
 
   @NotNull
   public String buildEndBillingJson(@NotNull ChargingPortSnapshot port, @NotNull String msgId) {
-    int finalBalance = port.getBalance() - 1;
     return "{\"cdz\":" + CDZ_END_BILLING + ",\"msg_id\":\"" + msgId + "\",\"data\":\"" +
-           port.getPortNumber() + ",0,0,0,0,0," + finalBalance + "\"}";
+           port.getPortNumber() + ",0,0,0,0,0," + port.getBalance() + "\"}";
   }
 
   @NotNull
