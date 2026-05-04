@@ -16,6 +16,7 @@ import org.jetbrains.annotations.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
@@ -23,7 +24,9 @@ import java.util.concurrent.TimeUnit;
 public final class MqttService implements MessagePublisher, Disposable {
 
   @Nullable
-  private volatile MqttAsyncClient myClient;
+  private MqttAsyncClient myClient;
+  @NotNull
+  private final Object myLifecycleLock = new Object();
   @NotNull
   private final String myBrokerUrl;
   @NotNull
@@ -36,6 +39,7 @@ public final class MqttService implements MessagePublisher, Disposable {
   private final ExecutorService myMessageExecutor;
   @Nullable
   private ScheduledExecutorService myReportTimer;
+  private boolean myAcceptingMessages;
   @NotNull
   private final String mySubscribeTopic;
   @NotNull
@@ -56,7 +60,10 @@ public final class MqttService implements MessagePublisher, Disposable {
 
   public void connect() throws MqttException {
     MqttAsyncClient client = new MqttAsyncClient(myBrokerUrl, myClientId, new MemoryPersistence());
-    myClient = client;
+    synchronized (myLifecycleLock) {
+      myClient = client;
+      myAcceptingMessages = true;
+    }
     MqttConnectOptions options = new MqttConnectOptions();
     options.setAutomaticReconnect(false);
     options.setCleanSession(true);
@@ -76,7 +83,22 @@ public final class MqttService implements MessagePublisher, Disposable {
       public void messageArrived(@Nullable String topic, @Nullable MqttMessage message) {
         if (message == null) return;
         String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
-        myMessageExecutor.execute(() -> myApplicationService.handleIncomingPayload(payload));
+        if (!isAcceptingMessages(client)) {
+          myConnectionListener.onMqttLog("拒绝晚到消息：MQTT 服务已关闭或切换");
+          return;
+        }
+        try {
+          myMessageExecutor.execute(() -> {
+            if (!isAcceptingMessages(client)) {
+              myConnectionListener.onMqttLog("丢弃已排队消息：MQTT 服务已关闭或切换");
+              return;
+            }
+            myApplicationService.handleIncomingPayload(payload);
+          });
+        }
+        catch (RejectedExecutionException e) {
+          myConnectionListener.onMqttLog("拒绝晚到消息：消息执行器已关闭");
+        }
       }
 
       @Override
@@ -103,7 +125,8 @@ public final class MqttService implements MessagePublisher, Disposable {
 
   public void disconnect() {
     myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.DISCONNECTING, null);
-    MqttAsyncClient client = myClient;
+    MqttAsyncClient client = currentClient();
+    rejectIncomingMessages();
     stopReportTimer();
     stopMessageExecutor();
     if (client == null) {
@@ -140,7 +163,7 @@ public final class MqttService implements MessagePublisher, Disposable {
   }
 
   public void closeForcibly() {
-    MqttAsyncClient client = myClient;
+    MqttAsyncClient client = currentClient();
     if (client != null) {
       closeClientForcibly(client);
     }
@@ -151,9 +174,13 @@ public final class MqttService implements MessagePublisher, Disposable {
   }
 
   private void stopReportTimer() {
-    if (myReportTimer != null) {
-      myReportTimer.shutdownNow();
+    ScheduledExecutorService reportTimer;
+    synchronized (myLifecycleLock) {
+      reportTimer = myReportTimer;
       myReportTimer = null;
+    }
+    if (reportTimer != null) {
+      reportTimer.shutdownNow();
     }
   }
 
@@ -163,7 +190,7 @@ public final class MqttService implements MessagePublisher, Disposable {
 
   @Override
   public boolean publish(@NotNull String json) {
-    MqttAsyncClient client = myClient;
+    MqttAsyncClient client = currentClient();
     if (client == null || !client.isConnected()) {
       myConnectionListener.onMqttLog("发布消息失败：MQTT 未连接");
       return false;
@@ -192,14 +219,23 @@ public final class MqttService implements MessagePublisher, Disposable {
   }
 
   private void subscribeAfterConnect(@NotNull MqttAsyncClient client) {
-    if (myClient != client) return;
+    if (!isCurrentClient(client)) return;
     try {
       client.subscribe(mySubscribeTopic, 0, null, new IMqttActionListener() {
         @Override
         public void onSuccess(@Nullable IMqttToken asyncActionToken) {
-          if (myClient != client) return;
-          myReportTimer = Executors.newSingleThreadScheduledExecutor(daemonThreadFactory("mqtt-report-timer"));
-          myReportTimer.scheduleAtFixedRate(myApplicationService::publishPeriodicReports, 60, 60, TimeUnit.SECONDS);
+          ScheduledExecutorService reportTimer = Executors.newSingleThreadScheduledExecutor(daemonThreadFactory("mqtt-report-timer"));
+          reportTimer.scheduleAtFixedRate(myApplicationService::publishPeriodicReports, 60, 60, TimeUnit.SECONDS);
+          synchronized (myLifecycleLock) {
+            if (myClient != client || !myAcceptingMessages) {
+              reportTimer.shutdownNow();
+              return;
+            }
+            if (myReportTimer != null) {
+              myReportTimer.shutdownNow();
+            }
+            myReportTimer = reportTimer;
+          }
           myConnectionListener.onMqttConnectionStatusChanged(MqttConnectionStatus.CONNECTED, null);
         }
 
@@ -220,22 +256,73 @@ public final class MqttService implements MessagePublisher, Disposable {
   }
 
   private void cleanupClient(@NotNull MqttAsyncClient client) {
-    if (myClient == client) {
-      myClient = null;
-    }
-    stopReportTimer();
-    stopMessageExecutor();
-    try { client.close(); } catch (Exception ignored) {}
+    clearClient(client);
+    closeClient(client);
   }
 
   private void closeClientForcibly(@NotNull MqttAsyncClient client) {
-    if (myClient == client) {
-      myClient = null;
+    clearClient(client);
+    try {
+      client.disconnectForcibly(1000, 1000);
     }
-    stopReportTimer();
-    stopMessageExecutor();
-    try { client.disconnectForcibly(1000, 1000); } catch (Exception ignored) {}
-    try { client.close(); } catch (Exception ignored) {}
+    catch (Exception e) {
+      myConnectionListener.onMqttLog("强制断开 MQTT 失败：" + e.getMessage());
+    }
+    closeClient(client);
+  }
+
+  @Nullable
+  private MqttAsyncClient currentClient() {
+    synchronized (myLifecycleLock) {
+      return myClient;
+    }
+  }
+
+  private boolean isCurrentClient(@NotNull MqttAsyncClient client) {
+    synchronized (myLifecycleLock) {
+      return myClient == client;
+    }
+  }
+
+  private boolean isAcceptingMessages(@NotNull MqttAsyncClient client) {
+    synchronized (myLifecycleLock) {
+      return myClient == client && myAcceptingMessages && !myMessageExecutor.isShutdown();
+    }
+  }
+
+  private void rejectIncomingMessages() {
+    synchronized (myLifecycleLock) {
+      myAcceptingMessages = false;
+    }
+  }
+
+  private void clearClient(@NotNull MqttAsyncClient client) {
+    ScheduledExecutorService reportTimer = null;
+    boolean clearMessageExecutor = false;
+    synchronized (myLifecycleLock) {
+      if (myClient == client) {
+        myClient = null;
+        myAcceptingMessages = false;
+        reportTimer = myReportTimer;
+        myReportTimer = null;
+        clearMessageExecutor = true;
+      }
+    }
+    if (reportTimer != null) {
+      reportTimer.shutdownNow();
+    }
+    if (clearMessageExecutor) {
+      stopMessageExecutor();
+    }
+  }
+
+  private void closeClient(@NotNull MqttAsyncClient client) {
+    try {
+      client.close();
+    }
+    catch (Exception e) {
+      myConnectionListener.onMqttLog("关闭 MQTT client 失败：" + e.getMessage());
+    }
   }
 
   @NotNull

@@ -1,6 +1,7 @@
 package com.raiden.domain;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public final class ChargingPort {
 
@@ -28,22 +29,16 @@ public final class ChargingPort {
   @NotNull
   public ChargingPortSnapshot snapshot() {
     synchronized (myLock) {
-      return new ChargingPortSnapshot(
-          myPortNumber,
-          myState,
-          myOrderType,
-          myDuration,
-          myKwhFee,
-          myUnit,
-          myStartBalance,
-          myBalance,
-          myStartTime
-      );
+      return snapshotLocked();
     }
   }
 
-  public void startCharging(int orderType, int duration, int kwhFee, int unit, int balance) {
+  @Nullable
+  public ChargingPortSnapshot tryStartChargingFromIdle(int orderType, int duration, int kwhFee, int unit, int balance) {
     synchronized (myLock) {
+      if (myState != ChargingPortState.IDLE) {
+        return null;
+      }
       myState = ChargingPortState.CHARGING;
       myStartTime = System.currentTimeMillis();
       myOrderType = orderType;
@@ -52,25 +47,84 @@ public final class ChargingPort {
       myUnit = unit;
       myStartBalance = balance;
       myBalance = balance;
+      return snapshotLocked();
     }
   }
 
-  public void beginClosing() {
+  @Nullable
+  public ChargingPortSnapshot tryBeginClosingFromCharging() {
     synchronized (myLock) {
+      if (myState != ChargingPortState.CHARGING) {
+        return null;
+      }
+      ChargingPortSnapshot snapshot = snapshotLocked();
       myState = ChargingPortState.CLOSING;
+      return snapshot;
+    }
+  }
+
+  public boolean restoreChargingIfStillClosing(@NotNull ChargingPortSnapshot snapshot) {
+    synchronized (myLock) {
+      if (myState != ChargingPortState.CLOSING || !isSameSessionLocked(snapshot)) {
+        return false;
+      }
+      myState = ChargingPortState.CHARGING;
+      return true;
+    }
+  }
+
+  @Nullable
+  public ChargingPortSnapshot finishBillingIfActive() {
+    synchronized (myLock) {
+      if (myState != ChargingPortState.CHARGING && myState != ChargingPortState.CLOSING) {
+        return null;
+      }
+      ChargingPortSnapshot snapshot = snapshotLocked();
+      resetLocked();
+      return snapshot;
     }
   }
 
   public void reset() {
     synchronized (myLock) {
-      myState = ChargingPortState.IDLE;
-      myOrderType = 0;
-      myDuration = 0;
-      myKwhFee = 0;
-      myUnit = 0;
-      myStartBalance = 0;
-      myBalance = 0;
-      myStartTime = 0;
+      resetLocked();
     }
+  }
+
+  @NotNull
+  private ChargingPortSnapshot snapshotLocked() {
+    return new ChargingPortSnapshot(
+        myPortNumber,
+        myState,
+        myOrderType,
+        myDuration,
+        myKwhFee,
+        myUnit,
+        myStartBalance,
+        myBalance,
+        myStartTime
+    );
+  }
+
+  private boolean isSameSessionLocked(@NotNull ChargingPortSnapshot snapshot) {
+    return snapshot.getPortNumber() == myPortNumber &&
+           snapshot.getOrderType() == myOrderType &&
+           snapshot.getDuration() == myDuration &&
+           snapshot.getKwhFee() == myKwhFee &&
+           snapshot.getUnit() == myUnit &&
+           snapshot.getStartBalance() == myStartBalance &&
+           snapshot.getBalance() == myBalance &&
+           snapshot.getStartTime() == myStartTime;
+  }
+
+  private void resetLocked() {
+    myState = ChargingPortState.IDLE;
+    myOrderType = 0;
+    myDuration = 0;
+    myKwhFee = 0;
+    myUnit = 0;
+    myStartBalance = 0;
+    myBalance = 0;
+    myStartTime = 0;
   }
 }

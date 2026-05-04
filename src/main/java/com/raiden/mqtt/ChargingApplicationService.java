@@ -61,18 +61,24 @@ public final class ChargingApplicationService {
       return;
     }
 
-    ChargingPortSnapshot snapshot = port.snapshot();
-    if (snapshot.getState() != ChargingPortState.CHARGING) {
+    ChargingPortSnapshot snapshot = port.tryBeginClosingFromCharging();
+    if (snapshot == null) {
       myListener.onApplicationLog("端口 " + portNumber + " 当前不是充电中状态");
       return;
     }
 
     if (!myPublisher.publish(myCodec.buildManualCloseJson(snapshot, nextMsgId()))) {
       myListener.onApplicationLog("端口 " + portNumber + " 手动结束订单发送失败");
+      if (port.restoreChargingIfStillClosing(snapshot)) {
+        myListener.onApplicationLog("端口 " + portNumber + " 已恢复为充电中状态");
+        myListener.onPortsChanged();
+      }
+      else {
+        myListener.onApplicationLog("端口 " + portNumber + " 状态已变化，未执行恢复");
+      }
       return;
     }
 
-    port.beginClosing();
     myListener.onApplicationLog("端口 " + portNumber + " 已发送手动结束订单");
     myListener.onPortsChanged();
   }
@@ -104,8 +110,22 @@ public final class ChargingApplicationService {
       return;
     }
 
-    port.startCharging(params.orderType, params.duration, params.kwhFee, params.unit, params.balance);
-    myPublisher.publish(myCodec.buildAckJson(port.snapshot(), msgId));
+    if (!myPublisher.publish(myCodec.buildAckJson(snapshot, msgId))) {
+      myListener.onApplicationLog("端口 " + params.portNum + " 启动充电 ACK 发送失败，未进入充电状态");
+      return;
+    }
+
+    ChargingPortSnapshot startedSnapshot = port.tryStartChargingFromIdle(
+        params.orderType,
+        params.duration,
+        params.kwhFee,
+        params.unit,
+        params.balance
+    );
+    if (startedSnapshot == null) {
+      myListener.onApplicationLog("端口 " + params.portNum + " ACK 已发送，但端口状态已变化，未进入充电状态");
+      return;
+    }
 
     myListener.onApplicationLog("端口 " + params.portNum + " 开始充电，余额=" + params.balance);
     myListener.onPortsChanged();
@@ -119,18 +139,35 @@ public final class ChargingApplicationService {
       return;
     }
 
-    ChargingPortSnapshot snapshot = port.snapshot();
-    if (snapshot.getState() == ChargingPortState.CHARGING || snapshot.getState() == ChargingPortState.CLOSING) {
+    ChargingPortSnapshot currentSnapshot = port.snapshot();
+    if (currentSnapshot.getState() == ChargingPortState.CHARGING || currentSnapshot.getState() == ChargingPortState.CLOSING) {
       waitBeforeEndBilling();
 
-      myPublisher.publish(myCodec.buildEndBillingJson(port.snapshot(), msgId));
-      port.reset();
+      ChargingPortSnapshot billingSnapshot = port.finishBillingIfActive();
+      if (billingSnapshot == null) {
+        ChargingPortSnapshot idleSnapshot = port.snapshot();
+        if (myPublisher.publish(myCodec.buildIdleEndBillingJson(idleSnapshot, msgId))) {
+          myListener.onApplicationLog("端口 " + portNum + " 状态已变化为空闲，已发送空闲响应");
+        }
+        else {
+          myListener.onApplicationLog("端口 " + portNum + " 空闲计费响应发送失败");
+        }
+        return;
+      }
+
+      if (!myPublisher.publish(myCodec.buildEndBillingJson(billingSnapshot, msgId))) {
+        myListener.onApplicationLog("端口 " + portNum + " 计费结束响应发送失败");
+      }
       myListener.onApplicationLog("端口 " + portNum + " 计费已结束");
       myListener.onPortsChanged();
     }
     else {
-      myPublisher.publish(myCodec.buildIdleEndBillingJson(snapshot, msgId));
-      myListener.onApplicationLog("端口 " + portNum + " 为空闲状态，已发送空闲响应");
+      if (myPublisher.publish(myCodec.buildIdleEndBillingJson(currentSnapshot, msgId))) {
+        myListener.onApplicationLog("端口 " + portNum + " 为空闲状态，已发送空闲响应");
+      }
+      else {
+        myListener.onApplicationLog("端口 " + portNum + " 空闲计费响应发送失败");
+      }
     }
   }
 
