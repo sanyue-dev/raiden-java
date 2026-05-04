@@ -215,7 +215,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
 
     constraints.gridx = 2;
     constraints.weightx = 0;
-    constraints.insets = new Insets(0, 10, 0, 0);
+    constraints.insets = new Insets(0, 0, 0, 0);
     topRow.add(createFixedWidthPanel(myInspectorPanel, RaidenTheme.INSPECTOR_WIDTH), constraints);
 
     return topRow;
