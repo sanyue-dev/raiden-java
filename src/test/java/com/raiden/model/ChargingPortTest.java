@@ -1,4 +1,4 @@
-package com.raiden.domain;
+package com.raiden.model;
 
 import org.junit.jupiter.api.Test;
 
@@ -21,42 +21,60 @@ class ChargingPortTest {
     assertEquals(100, started.getBalance());
     assertNull(port.tryStartChargingFromIdle(2, 30, 5, 1, 100));
 
-    assertNotNull(port.tryBeginClosingFromCharging());
+    assertNotNull(port.tryStopFromCharging());
     assertNull(port.tryStartChargingFromIdle(2, 30, 5, 1, 100));
   }
 
   @Test
-  void beginsClosingOnlyFromCharging() {
+  void stopsOnlyFromCharging() {
     ChargingPort port = new ChargingPort(1);
 
-    assertNull(port.tryBeginClosingFromCharging());
+    assertNull(port.tryStopFromCharging());
 
     assertNotNull(port.tryStartChargingFromIdle(2, 30, 5, 1, 100));
-    ChargingPortSnapshot closingSnapshot = port.tryBeginClosingFromCharging();
+    ChargingPortSnapshot stoppedSnapshot = port.tryStopFromCharging();
 
-    assertNotNull(closingSnapshot);
-    assertEquals(ChargingPortState.CHARGING, closingSnapshot.getState());
-    assertEquals(ChargingPortState.CLOSING, port.snapshot().getState());
-    assertNull(port.tryBeginClosingFromCharging());
+    assertNotNull(stoppedSnapshot);
+    assertEquals(ChargingPortState.CHARGING, stoppedSnapshot.getState());
+    assertEquals(ChargingPortState.STOPPED, port.snapshot().getState());
+    assertNull(port.tryStopFromCharging());
   }
 
   @Test
-  void restoresChargingOnlyForSameClosingSession() {
+  void restoresChargingOnlyForSameStoppedSession() {
     ChargingPort port = new ChargingPort(1);
 
     assertNotNull(port.tryStartChargingFromIdle(2, 30, 5, 1, 100));
-    ChargingPortSnapshot closingSnapshot = port.tryBeginClosingFromCharging();
+    ChargingPortSnapshot stoppedSnapshot = port.tryStopFromCharging();
 
-    assertNotNull(closingSnapshot);
-    assertTrue(port.restoreChargingIfStillClosing(closingSnapshot));
+    assertNotNull(stoppedSnapshot);
+    assertTrue(port.restoreChargingIfStillStopped(stoppedSnapshot));
     assertEquals(ChargingPortState.CHARGING, port.snapshot().getState());
 
-    ChargingPortSnapshot staleClosingSnapshot = port.tryBeginClosingFromCharging();
-    assertNotNull(staleClosingSnapshot);
+    ChargingPortSnapshot staleStoppedSnapshot = port.tryStopFromCharging();
+    assertNotNull(staleStoppedSnapshot);
     assertNotNull(port.finishBillingIfActive());
 
-    assertFalse(port.restoreChargingIfStillClosing(staleClosingSnapshot));
+    assertFalse(port.restoreChargingIfStillStopped(staleStoppedSnapshot));
     assertEquals(ChargingPortState.IDLE, port.snapshot().getState());
+  }
+
+  @Test
+  void resetsChargingOnlyForSameChargingSession() {
+    ChargingPort port = new ChargingPort(1);
+
+    ChargingPortSnapshot startedSnapshot = port.tryStartChargingFromIdle(2, 30, 5, 1, 100);
+
+    assertNotNull(startedSnapshot);
+    assertTrue(port.resetChargingIfSameSession(startedSnapshot));
+    assertEquals(ChargingPortState.IDLE, port.snapshot().getState());
+
+    ChargingPortSnapshot staleStartedSnapshot = port.tryStartChargingFromIdle(2, 30, 5, 1, 100);
+    assertNotNull(staleStartedSnapshot);
+    assertNotNull(port.tryStopFromCharging());
+
+    assertFalse(port.resetChargingIfSameSession(staleStartedSnapshot));
+    assertEquals(ChargingPortState.STOPPED, port.snapshot().getState());
   }
 
   @Test

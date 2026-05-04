@@ -1,5 +1,7 @@
 package com.raiden.mqtt;
 
+import com.raiden.application.ChargingApplicationService;
+import com.raiden.application.MessagePublisher;
 import com.raiden.platform.Disposable;
 import org.eclipse.paho.client.mqttv3.IMqttActionListener;
 import org.eclipse.paho.client.mqttv3.IMqttToken;
@@ -83,10 +85,14 @@ public final class MqttService implements MessagePublisher, Disposable {
       public void messageArrived(@Nullable String topic, @Nullable MqttMessage message) {
         if (message == null) return;
         String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+        String actualTopic = topic == null ? "<unknown>" : topic;
         if (!isAcceptingMessages(client)) {
           myConnectionListener.onMqttLog("拒绝晚到消息：MQTT 服务已关闭或切换");
           return;
         }
+        myConnectionListener.onMqttLog(
+            "MQTT IN  topic=" + actualTopic + " qos=" + message.getQos() + " payload=" + payload
+        );
         try {
           myMessageExecutor.execute(() -> {
             if (!isAcceptingMessages(client)) {
@@ -197,6 +203,7 @@ public final class MqttService implements MessagePublisher, Disposable {
     }
     try {
       client.publish(myPublishTopic, json.getBytes(StandardCharsets.UTF_8), 0, false);
+      myConnectionListener.onMqttLog("MQTT OUT topic=" + myPublishTopic + " qos=0 payload=" + json);
       return true;
     }
     catch (MqttException e) {

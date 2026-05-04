@@ -1,7 +1,7 @@
 package com.raiden.ui;
 
-import com.raiden.domain.ChargingPortSnapshot;
-import com.raiden.domain.ChargingPortState;
+import com.raiden.model.ChargingPortSnapshot;
+import com.raiden.model.ChargingPortState;
 import org.jetbrains.annotations.NotNull;
 
 final class ChargingPortPresentation {
@@ -12,7 +12,7 @@ final class ChargingPortPresentation {
   static String getStateLabel(@NotNull ChargingPortState state) {
     switch (state) {
       case CHARGING: return "充电中";
-      case CLOSING: return "结束中";
+      case STOPPED: return "已停充";
       default: return "空闲";
     }
   }

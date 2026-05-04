@@ -141,12 +141,6 @@ public final class SessionPanel extends JPanel {
         bg = RaidenTheme.COLOR_ACCENT_SOFT;
         border = RaidenTheme.COLOR_ACCENT;
         break;
-      case CONNECTING:
-      case DISCONNECTING:
-        fg = RaidenTheme.COLOR_PENDING;
-        bg = RaidenTheme.COLOR_PENDING_SOFT;
-        border = RaidenTheme.COLOR_PENDING;
-        break;
       default:
         fg = RaidenTheme.COLOR_WARNING;
         bg = RaidenTheme.COLOR_WARNING_SOFT;

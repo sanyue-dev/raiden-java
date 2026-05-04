@@ -1,4 +1,4 @@
-package com.raiden.domain;
+package com.raiden.model;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -52,20 +52,20 @@ public final class ChargingPort {
   }
 
   @Nullable
-  public ChargingPortSnapshot tryBeginClosingFromCharging() {
+  public ChargingPortSnapshot tryStopFromCharging() {
     synchronized (myLock) {
       if (myState != ChargingPortState.CHARGING) {
         return null;
       }
       ChargingPortSnapshot snapshot = snapshotLocked();
-      myState = ChargingPortState.CLOSING;
+      myState = ChargingPortState.STOPPED;
       return snapshot;
     }
   }
 
-  public boolean restoreChargingIfStillClosing(@NotNull ChargingPortSnapshot snapshot) {
+  public boolean restoreChargingIfStillStopped(@NotNull ChargingPortSnapshot snapshot) {
     synchronized (myLock) {
-      if (myState != ChargingPortState.CLOSING || !isSameSessionLocked(snapshot)) {
+      if (myState != ChargingPortState.STOPPED || !isSameSessionLocked(snapshot)) {
         return false;
       }
       myState = ChargingPortState.CHARGING;
@@ -73,10 +73,20 @@ public final class ChargingPort {
     }
   }
 
+  public boolean resetChargingIfSameSession(@NotNull ChargingPortSnapshot snapshot) {
+    synchronized (myLock) {
+      if (myState != ChargingPortState.CHARGING || snapshot.getState() != ChargingPortState.CHARGING || !isSameSessionLocked(snapshot)) {
+        return false;
+      }
+      resetLocked();
+      return true;
+    }
+  }
+
   @Nullable
   public ChargingPortSnapshot finishBillingIfActive() {
     synchronized (myLock) {
-      if (myState != ChargingPortState.CHARGING && myState != ChargingPortState.CLOSING) {
+      if (myState != ChargingPortState.CHARGING && myState != ChargingPortState.STOPPED) {
         return null;
       }
       ChargingPortSnapshot snapshot = snapshotLocked();

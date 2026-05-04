@@ -1,9 +1,11 @@
-package com.raiden.mqtt;
+package com.raiden.application;
 
-import com.raiden.domain.ChargingPort;
-import com.raiden.domain.ChargingPortSnapshot;
-import com.raiden.domain.ChargingPortState;
-import com.raiden.domain.ChargingStation;
+import com.raiden.model.ChargingPort;
+import com.raiden.model.ChargingPortSnapshot;
+import com.raiden.model.ChargingPortState;
+import com.raiden.model.ChargingStation;
+import com.raiden.protocol.RaidenMessage;
+import com.raiden.protocol.RaidenProtocolCodec;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.atomic.AtomicLong;
@@ -19,14 +21,22 @@ public final class ChargingApplicationService {
   @NotNull
   private final ChargingApplicationListener myListener;
   @NotNull
-  private final AtomicLong myMsgId = new AtomicLong(0);
+  private final AtomicLong myMsgId;
 
   public ChargingApplicationService(@NotNull ChargingStation station,
                                     @NotNull RaidenProtocolCodec codec,
                                     @NotNull ChargingApplicationListener listener) {
+    this(station, codec, listener, new AtomicLong(0));
+  }
+
+  public ChargingApplicationService(@NotNull ChargingStation station,
+                                    @NotNull RaidenProtocolCodec codec,
+                                    @NotNull ChargingApplicationListener listener,
+                                    @NotNull AtomicLong msgId) {
     myStation = station;
     myCodec = codec;
     myListener = listener;
+    myMsgId = msgId;
   }
 
   public void setMessagePublisher(@NotNull MessagePublisher publisher) {
@@ -50,7 +60,11 @@ public final class ChargingApplicationService {
       }
     }
     catch (Exception e) {
-      myListener.onApplicationLog("处理消息失败：" + e.getMessage());
+      myListener.onApplicationLog(
+          "处理消息失败 type=" + e.getClass().getSimpleName() +
+          " message=" + e.getMessage() +
+          " payload=" + payload
+      );
     }
   }
 
@@ -61,15 +75,15 @@ public final class ChargingApplicationService {
       return;
     }
 
-    ChargingPortSnapshot snapshot = port.tryBeginClosingFromCharging();
+    ChargingPortSnapshot snapshot = port.tryStopFromCharging();
     if (snapshot == null) {
       myListener.onApplicationLog("端口 " + portNumber + " 当前不是充电中状态");
       return;
     }
 
     if (!myPublisher.publish(myCodec.buildManualCloseJson(snapshot, nextMsgId()))) {
-      myListener.onApplicationLog("端口 " + portNumber + " 手动结束订单发送失败");
-      if (port.restoreChargingIfStillClosing(snapshot)) {
+      myListener.onApplicationLog("端口 " + portNumber + " 手动停充通知发送失败");
+      if (port.restoreChargingIfStillStopped(snapshot)) {
         myListener.onApplicationLog("端口 " + portNumber + " 已恢复为充电中状态");
         myListener.onPortsChanged();
       }
@@ -79,7 +93,7 @@ public final class ChargingApplicationService {
       return;
     }
 
-    myListener.onApplicationLog("端口 " + portNumber + " 已发送手动结束订单");
+    myListener.onApplicationLog("端口 " + portNumber + " 已发送手动停充通知");
     myListener.onPortsChanged();
   }
 
@@ -101,17 +115,7 @@ public final class ChargingApplicationService {
     ChargingPort port = myStation.findPort(params.portNum);
     if (port == null) {
       myListener.onApplicationLog("未找到端口 " + params.portNum);
-      return;
-    }
-
-    ChargingPortSnapshot snapshot = port.snapshot();
-    if (snapshot.getState() != ChargingPortState.IDLE) {
-      myListener.onApplicationLog("端口 " + params.portNum + " 当前不是空闲状态，当前状态：" + snapshot.getState().name());
-      return;
-    }
-
-    if (!myPublisher.publish(myCodec.buildAckJson(snapshot, msgId))) {
-      myListener.onApplicationLog("端口 " + params.portNum + " 启动充电 ACK 发送失败，未进入充电状态");
+      publishStartChargingFailure(params.portNum, msgId);
       return;
     }
 
@@ -123,7 +127,19 @@ public final class ChargingApplicationService {
         params.balance
     );
     if (startedSnapshot == null) {
-      myListener.onApplicationLog("端口 " + params.portNum + " ACK 已发送，但端口状态已变化，未进入充电状态");
+      ChargingPortSnapshot currentSnapshot = port.snapshot();
+      myListener.onApplicationLog("端口 " + params.portNum + " 当前不是空闲状态，当前状态：" + currentSnapshot.getState().name());
+      publishStartChargingFailure(params.portNum, msgId);
+      return;
+    }
+
+    if (!myPublisher.publish(myCodec.buildStartChargingResponseJson(params.portNum, msgId, true))) {
+      if (port.resetChargingIfSameSession(startedSnapshot)) {
+        myListener.onApplicationLog("端口 " + params.portNum + " 启动充电响应发送失败，已回滚为空闲");
+      }
+      else {
+        myListener.onApplicationLog("端口 " + params.portNum + " 启动充电响应发送失败，状态已变化，未执行回滚");
+      }
       return;
     }
 
@@ -131,16 +147,26 @@ public final class ChargingApplicationService {
     myListener.onPortsChanged();
   }
 
+  private void publishStartChargingFailure(int portNum, @NotNull String msgId) {
+    if (myPublisher.publish(myCodec.buildStartChargingResponseJson(portNum, msgId, false))) {
+      myListener.onApplicationLog("端口 " + portNum + " 已发送启动充电失败响应");
+    }
+    else {
+      myListener.onApplicationLog("端口 " + portNum + " 启动充电失败响应发送失败");
+    }
+  }
+
   private void handleEndBilling(@NotNull String data, @NotNull String msgId) {
     int portNum = Integer.parseInt(data.trim());
     ChargingPort port = myStation.findPort(portNum);
     if (port == null) {
       myListener.onApplicationLog("未找到端口 " + portNum);
+      myListener.onApplicationLog("端口 " + portNum + " 不存在响应格式待服务端协议确认，未发送计费结束响应");
       return;
     }
 
     ChargingPortSnapshot currentSnapshot = port.snapshot();
-    if (currentSnapshot.getState() == ChargingPortState.CHARGING || currentSnapshot.getState() == ChargingPortState.CLOSING) {
+    if (currentSnapshot.getState() == ChargingPortState.CHARGING || currentSnapshot.getState() == ChargingPortState.STOPPED) {
       waitBeforeEndBilling();
 
       ChargingPortSnapshot billingSnapshot = port.finishBillingIfActive();

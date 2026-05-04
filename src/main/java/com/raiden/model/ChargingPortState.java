@@ -1,7 +1,7 @@
-package com.raiden.domain;
+package com.raiden.model;
 
 public enum ChargingPortState {
   IDLE,
   CHARGING,
-  CLOSING
+  STOPPED
 }

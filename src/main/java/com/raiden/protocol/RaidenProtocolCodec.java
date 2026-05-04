@@ -1,6 +1,6 @@
-package com.raiden.mqtt;
+package com.raiden.protocol;
 
-import com.raiden.domain.ChargingPortSnapshot;
+import com.raiden.model.ChargingPortSnapshot;
 import org.jetbrains.annotations.NotNull;
 
 public final class RaidenProtocolCodec {
@@ -51,8 +51,9 @@ public final class RaidenProtocolCodec {
   }
 
   @NotNull
-  public String buildAckJson(@NotNull ChargingPortSnapshot port, @NotNull String msgId) {
-    return "{\"cdz\":" + CDZ_START_CHARGING + ",\"msg_id\":\"" + msgId + "\",\"data\":\"" + port.getPortNumber() + ",1\"}";
+  public String buildStartChargingResponseJson(int portNumber, @NotNull String msgId, boolean success) {
+    return "{\"cdz\":" + CDZ_START_CHARGING + ",\"msg_id\":\"" + msgId + "\",\"data\":\"" +
+           portNumber + "," + (success ? 1 : 0) + "\"}";
   }
 
   @NotNull
@@ -63,9 +64,8 @@ public final class RaidenProtocolCodec {
 
   @NotNull
   public String buildEndBillingJson(@NotNull ChargingPortSnapshot port, @NotNull String msgId) {
-    int finalBalance = port.getBalance() - 1;
     return "{\"cdz\":" + CDZ_END_BILLING + ",\"msg_id\":\"" + msgId + "\",\"data\":\"" +
-           port.getPortNumber() + ",0,0,0,0,0," + finalBalance + "\"}";
+           port.getPortNumber() + ",0,0,0,0,0," + port.getBalance() + "\"}";
   }
 
   @NotNull

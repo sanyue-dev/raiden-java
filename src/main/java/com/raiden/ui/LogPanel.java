@@ -19,7 +19,7 @@ public final class LogPanel extends JPanel {
     setLayout(new BorderLayout(0, 8));
     RaidenTheme.applyCardStyle(this);
     setPreferredSize(new Dimension(0, 220));
-    add(RaidenTheme.createCardHeader("事件日志"), BorderLayout.NORTH);
+    add(RaidenTheme.createCardHeader("事件日志", createClearButton()), BorderLayout.NORTH);
 
     myLogArea = new JTextArea(9, 50);
     myLogArea.setEditable(false);
@@ -39,6 +39,22 @@ public final class LogPanel extends JPanel {
     add(logScroll, BorderLayout.CENTER);
   }
 
+  @NotNull
+  private JButton createClearButton() {
+    JButton button = new JButton("清空");
+    button.setFont(MainFrameFonts.bold(11f));
+    button.setForeground(RaidenTheme.COLOR_MUTED);
+    button.setBackground(RaidenTheme.COLOR_SURFACE_ALT);
+    button.setOpaque(true);
+    button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+    button.setFocusPainted(false);
+    button.setBorder(new LineBorder(RaidenTheme.COLOR_BORDER, 1, true));
+    button.setMargin(new Insets(4, 10, 4, 10));
+    button.setPreferredSize(new Dimension(62, 26));
+    button.addActionListener(e -> clearLog());
+    return button;
+  }
+
   public void appendLog(@NotNull String message) {
     if (!SwingUtilities.isEventDispatchThread()) {
       SwingUtilities.invokeLater(() -> appendLog(message));
@@ -48,6 +64,14 @@ public final class LogPanel extends JPanel {
     myLogArea.append("[" + timestamp + "] " + message + "\n");
     trimLogArea();
     myLogArea.setCaretPosition(myLogArea.getDocument().getLength());
+  }
+
+  private void clearLog() {
+    if (!SwingUtilities.isEventDispatchThread()) {
+      SwingUtilities.invokeLater(this::clearLog);
+      return;
+    }
+    myLogArea.setText("");
   }
 
   private void trimLogArea() {

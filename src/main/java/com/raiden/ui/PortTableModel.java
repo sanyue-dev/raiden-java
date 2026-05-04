@@ -1,7 +1,7 @@
 package com.raiden.ui;
 
-import com.raiden.domain.ChargingPortSnapshot;
-import com.raiden.domain.ChargingStation;
+import com.raiden.model.ChargingPortSnapshot;
+import com.raiden.model.ChargingStation;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.table.AbstractTableModel;

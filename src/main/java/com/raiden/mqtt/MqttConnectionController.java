@@ -1,10 +1,15 @@
 package com.raiden.mqtt;
 
-import com.raiden.domain.ChargingStation;
+import com.raiden.application.ChargingApplicationListener;
+import com.raiden.application.ChargingApplicationService;
+import com.raiden.model.ChargingStation;
 import com.raiden.platform.Disposable;
 import com.raiden.platform.Disposer;
+import com.raiden.protocol.RaidenProtocolCodec;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class MqttConnectionController implements Disposable {
 
@@ -20,6 +25,8 @@ public final class MqttConnectionController implements Disposable {
   private MqttService myService;
   @NotNull
   private Phase myPhase = Phase.DISCONNECTED;
+  @NotNull
+  private final AtomicLong myMsgId = new AtomicLong(0);
   private long myGeneration;
   private boolean myDisposed;
 
@@ -33,7 +40,7 @@ public final class MqttConnectionController implements Disposable {
     Disposer.register(parentDisposable, this);
   }
 
-  public boolean connect(@NotNull String brokerUrl, @NotNull String clientId, int portCount) {
+  public boolean connect(@NotNull String brokerUrl, @NotNull String clientId) {
     long generation;
     synchronized (myLock) {
       if (myDisposed) {
@@ -47,10 +54,12 @@ public final class MqttConnectionController implements Disposable {
       generation = ++myGeneration;
     }
 
-    myStation.resetPorts(portCount);
-    myApplicationListener.onPortsChanged();
-
-    ChargingApplicationService appService = new ChargingApplicationService(myStation, new RaidenProtocolCodec(), myApplicationListener);
+    ChargingApplicationService appService = new ChargingApplicationService(
+        myStation,
+        new RaidenProtocolCodec(),
+        myApplicationListener,
+        myMsgId
+    );
     ServiceCallback callback = new ServiceCallback(generation, brokerUrl, clientId);
     MqttService service = new MqttService(brokerUrl, clientId, appService, callback);
     callback.myService = service;

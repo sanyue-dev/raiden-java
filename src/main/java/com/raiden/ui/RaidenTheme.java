@@ -1,6 +1,6 @@
 package com.raiden.ui;
 
-import com.raiden.domain.ChargingPortState;
+import com.raiden.model.ChargingPortState;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -142,7 +142,7 @@ public final class RaidenTheme {
   @NotNull
   public static Color resolveStatusColor(@NotNull ChargingPortState state) {
     if (state == ChargingPortState.CHARGING) return COLOR_ACCENT;
-    if (state == ChargingPortState.CLOSING) return COLOR_WARNING;
+    if (state == ChargingPortState.STOPPED) return COLOR_WARNING;
     return COLOR_IDLE;
   }
 }

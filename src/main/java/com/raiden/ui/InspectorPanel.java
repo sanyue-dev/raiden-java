@@ -1,7 +1,7 @@
 package com.raiden.ui;
 
-import com.raiden.domain.ChargingPortSnapshot;
-import com.raiden.domain.ChargingPortState;
+import com.raiden.model.ChargingPortSnapshot;
+import com.raiden.model.ChargingPortState;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -54,7 +54,7 @@ public final class InspectorPanel extends JPanel {
     body.add(Box.createVerticalStrut(16));
     body.add(createHintPanel());
 
-    myCloseOrderButton = new JButton("结束订单");
+    myCloseOrderButton = new JButton("手动停充");
     myCloseOrderButton.setEnabled(false);
     RaidenTheme.styleButton(myCloseOrderButton,
         RaidenTheme.COLOR_WARNING_SOFT, RaidenTheme.COLOR_WARNING, new Color(0xD9A08B));
@@ -106,16 +106,16 @@ public final class InspectorPanel extends JPanel {
       setSelectionHint("正在断开连接，请等待断开完成。");
     }
     else if (myConnectionState != ConnectionState.CONNECTED) {
-      setSelectionHint("请先连接服务器，再发送手动结束订单。");
+      setSelectionHint("请先连接服务器，再发送手动停充通知。");
     }
     else if (state == ChargingPortState.CHARGING) {
-      setSelectionHint("该端口正在充电。点击\"结束订单\"会立即发送手动结束命令。");
+      setSelectionHint("该端口正在充电。点击\"手动停充\"会停止本地充电并通知服务器。");
     }
-    else if (state == ChargingPortState.CLOSING) {
-      setSelectionHint("该端口正在结束订单，请等待计费结束消息完成重置。");
+    else if (state == ChargingPortState.STOPPED) {
+      setSelectionHint("该端口已手动停充，请等待服务器计费结束。");
     }
     else {
-      setSelectionHint("只有\"充电中\"状态的端口可以手动结束订单。");
+      setSelectionHint("只有\"充电中\"状态的端口可以手动停充。");
     }
   }
 

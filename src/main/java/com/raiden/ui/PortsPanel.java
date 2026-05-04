@@ -1,7 +1,7 @@
 package com.raiden.ui;
 
-import com.raiden.domain.ChargingPortSnapshot;
-import com.raiden.domain.ChargingPortState;
+import com.raiden.model.ChargingPortSnapshot;
+import com.raiden.model.ChargingPortState;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -107,8 +107,8 @@ public final class PortsPanel extends JPanel {
 
       ChargingPortSnapshot port = myTableModel.getPortSnapshot(row);
       boolean active = port.getState() == ChargingPortState.CHARGING;
-      boolean closing = port.getState() == ChargingPortState.CLOSING;
-      boolean inUse = active || closing;
+      boolean stopped = port.getState() == ChargingPortState.STOPPED;
+      boolean inUse = active || stopped;
 
       setFont(column == 1 ? myBoldFont : myPlainFont);
       setBorder(myCellPadding);

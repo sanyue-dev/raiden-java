@@ -1,8 +1,8 @@
 package com.raiden.ui;
 
-import com.raiden.domain.ChargingPortSnapshot;
-import com.raiden.domain.ChargingStation;
-import com.raiden.mqtt.ChargingApplicationListener;
+import com.raiden.application.ChargingApplicationListener;
+import com.raiden.model.ChargingPortSnapshot;
+import com.raiden.model.ChargingStation;
 import com.raiden.mqtt.ConnectionListener;
 import com.raiden.mqtt.MqttConnectionController;
 import com.raiden.mqtt.MqttConnectionStatus;
@@ -111,7 +111,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
       return;
     }
 
-    if (myConnectionController.connect(broker, clientId, mySessionPanel.getPortCount())) {
+    if (myConnectionController.connect(broker, clientId)) {
       myPortsPanel.clearSelection();
       myInspectorPanel.updateFromSelection();
     }
@@ -167,7 +167,7 @@ public final class MainFrame extends JFrame implements ChargingApplicationListen
 
   @Override
   public void onApplicationLog(@NotNull String message) {
-    myLogPanel.appendLog(message);
+    myLogPanel.appendLog("APP      " + message);
   }
 
   @Override

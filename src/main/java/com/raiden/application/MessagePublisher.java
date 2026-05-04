@@ -1,4 +1,4 @@
-package com.raiden.mqtt;
+package com.raiden.application;
 
 import org.jetbrains.annotations.NotNull;
 

@@ -1,4 +1,4 @@
-package com.raiden.domain;
+package com.raiden.model;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
