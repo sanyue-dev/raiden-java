@@ -46,12 +46,14 @@ Application workflow orchestration.
 - Converts incoming protocol messages into local model operations.
 - Decides which protocol responses or reports should be published.
 - Coordinates rollback when local state changed but message publishing failed.
+- `application.session` owns Charging Session lifecycle orchestration for start charging, manual stop, billing completion, and publish-failure recovery.
 - Reports application-level events to the UI through listener interfaces.
 - Depends on `model` and `protocol`, but not on Swing or Paho MQTT.
 
 Classes:
 
 - `ChargingApplicationService`: handles `cdz=101`, `cdz=104`, manual stop, and periodic reports.
+- `ChargingSessionLifecycle`: coordinates Charging Session state transitions and publish-failure recovery without parsing protocol payloads or publishing MQTT messages directly.
 - `ChargingApplicationListener`: callback for application logs and port-state changes.
 - `MessagePublisher`: outbound message abstraction used by the application layer.
 
