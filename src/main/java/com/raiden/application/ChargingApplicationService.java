@@ -1,6 +1,7 @@
 package com.raiden.application;
 
-import com.raiden.model.ChargingPort;
+import com.raiden.application.session.ChargingSessionLifecycle;
+import com.raiden.application.session.ChargingSessionLifecycleResult;
 import com.raiden.model.ChargingPortSnapshot;
 import com.raiden.model.ChargingPortState;
 import com.raiden.model.ChargingStation;
@@ -22,6 +23,8 @@ public final class ChargingApplicationService {
   private final ChargingApplicationListener myListener;
   @NotNull
   private final AtomicLong myMsgId;
+  @NotNull
+  private final ChargingSessionLifecycle mySessionLifecycle;
 
   public ChargingApplicationService(@NotNull ChargingStation station,
                                     @NotNull RaidenProtocolCodec codec,
@@ -37,6 +40,7 @@ public final class ChargingApplicationService {
     myCodec = codec;
     myListener = listener;
     myMsgId = msgId;
+    mySessionLifecycle = new ChargingSessionLifecycle(station);
   }
 
   public void setMessagePublisher(@NotNull MessagePublisher publisher) {
@@ -69,32 +73,12 @@ public final class ChargingApplicationService {
   }
 
   public void manualClose(int portNumber) {
-    ChargingPort port = myStation.findPort(portNumber);
-    if (port == null) {
-      myListener.onApplicationLog("端口 " + portNumber + " 当前不是充电中状态");
-      return;
-    }
-
-    ChargingPortSnapshot snapshot = port.tryStopFromCharging();
-    if (snapshot == null) {
-      myListener.onApplicationLog("端口 " + portNumber + " 当前不是充电中状态");
-      return;
-    }
-
-    if (!myPublisher.publish(myCodec.buildManualCloseJson(snapshot, nextMsgId()))) {
-      myListener.onApplicationLog("端口 " + portNumber + " 手动停充通知发送失败");
-      if (port.restoreChargingIfStillStopped(snapshot)) {
-        myListener.onApplicationLog("端口 " + portNumber + " 已恢复为充电中状态");
-        myListener.onPortsChanged();
-      }
-      else {
-        myListener.onApplicationLog("端口 " + portNumber + " 状态已变化，未执行恢复");
-      }
-      return;
-    }
-
-    myListener.onApplicationLog("端口 " + portNumber + " 已发送手动停充通知");
-    myListener.onPortsChanged();
+    ChargingSessionLifecycleResult result = mySessionLifecycle.manualStop(
+        portNumber,
+        snapshot -> myPublisher.publish(myCodec.buildManualCloseJson(snapshot, nextMsgId()))
+    );
+    logManualStopResult(result);
+    notifyPortsChanged(result);
   }
 
   public void publishPeriodicReports() {
@@ -112,43 +96,72 @@ public final class ChargingApplicationService {
   private void handleStartCharging(@NotNull String data, @NotNull String msgId) {
     RaidenProtocolCodec.StartChargingParams params = myCodec.parseStartChargingData(data);
 
-    ChargingPort port = myStation.findPort(params.portNum);
-    if (port == null) {
-      myListener.onApplicationLog("未找到端口 " + params.portNum);
-      publishStartChargingFailure(params.portNum, msgId);
-      return;
-    }
-
-    ChargingPortSnapshot startedSnapshot = port.tryStartChargingFromIdle(
+    ChargingSessionLifecycleResult result = mySessionLifecycle.startCharging(
+        params.portNum,
         params.orderType,
         params.duration,
         params.kwhFee,
         params.unit,
-        params.balance
+        params.balance,
+        (portNumber, success) -> myPublisher.publish(myCodec.buildStartChargingResponseJson(portNumber, msgId, success))
     );
-    if (startedSnapshot == null) {
-      ChargingPortSnapshot currentSnapshot = port.snapshot();
-      myListener.onApplicationLog("端口 " + params.portNum + " 当前不是空闲状态，当前状态：" + currentSnapshot.getState().name());
-      publishStartChargingFailure(params.portNum, msgId);
-      return;
-    }
-
-    if (!myPublisher.publish(myCodec.buildStartChargingResponseJson(params.portNum, msgId, true))) {
-      if (port.resetChargingIfSameSession(startedSnapshot)) {
-        myListener.onApplicationLog("端口 " + params.portNum + " 启动充电响应发送失败，已回滚为空闲");
-      }
-      else {
-        myListener.onApplicationLog("端口 " + params.portNum + " 启动充电响应发送失败，状态已变化，未执行回滚");
-      }
-      return;
-    }
-
-    myListener.onApplicationLog("端口 " + params.portNum + " 开始充电，余额=" + params.balance);
-    myListener.onPortsChanged();
+    logStartChargingResult(result, params.balance);
+    notifyPortsChanged(result);
   }
 
-  private void publishStartChargingFailure(int portNum, @NotNull String msgId) {
-    if (myPublisher.publish(myCodec.buildStartChargingResponseJson(portNum, msgId, false))) {
+  private void handleEndBilling(@NotNull String data, @NotNull String msgId) {
+    int portNum = Integer.parseInt(data.trim());
+    ChargingSessionLifecycleResult result = mySessionLifecycle.completeBilling(
+        portNum,
+        snapshot -> waitBeforeEndBilling(),
+        new ChargingSessionLifecycle.BillingResponsePublisher() {
+          @Override
+          public boolean publishActiveBillingResponse(@NotNull ChargingPortSnapshot snapshot) {
+            return myPublisher.publish(myCodec.buildEndBillingJson(snapshot, msgId));
+          }
+
+          @Override
+          public boolean publishIdleBillingResponse(@NotNull ChargingPortSnapshot snapshot) {
+            return myPublisher.publish(myCodec.buildIdleEndBillingJson(snapshot, msgId));
+          }
+        }
+    );
+    logBillingResult(result);
+    notifyPortsChanged(result);
+  }
+
+  private void logStartChargingResult(@NotNull ChargingSessionLifecycleResult result, int balance) {
+    int portNum = result.getPortNumber();
+    switch (result.getType()) {
+      case START_ACCEPTED:
+        myListener.onApplicationLog("端口 " + portNum + " 开始充电，余额=" + balance);
+        break;
+      case START_REJECTED_PORT_NOT_FOUND:
+        myListener.onApplicationLog("未找到端口 " + portNum);
+        logStartChargingFailureResponse(result);
+        break;
+      case START_REJECTED_PORT_NOT_IDLE:
+        ChargingPortSnapshot currentSnapshot = result.getCurrentSnapshot();
+        if (currentSnapshot == null) {
+          throw new IllegalStateException("启动充电拒绝结果缺少当前端口快照");
+        }
+        myListener.onApplicationLog("端口 " + portNum + " 当前不是空闲状态，当前状态：" + currentSnapshot.getState().name());
+        logStartChargingFailureResponse(result);
+        break;
+      case START_RESPONSE_PUBLISH_FAILED_ROLLED_BACK:
+        myListener.onApplicationLog("端口 " + portNum + " 启动充电响应发送失败，已回滚为空闲");
+        break;
+      case START_RESPONSE_PUBLISH_FAILED_NOT_ROLLED_BACK:
+        myListener.onApplicationLog("端口 " + portNum + " 启动充电响应发送失败，状态已变化，未执行回滚");
+        break;
+      default:
+        throw new IllegalStateException("未知启动充电结果：" + result.getType());
+    }
+  }
+
+  private void logStartChargingFailureResponse(@NotNull ChargingSessionLifecycleResult result) {
+    int portNum = result.getPortNumber();
+    if (result.isResponsePublished()) {
       myListener.onApplicationLog("端口 " + portNum + " 已发送启动充电失败响应");
     }
     else {
@@ -156,44 +169,62 @@ public final class ChargingApplicationService {
     }
   }
 
-  private void handleEndBilling(@NotNull String data, @NotNull String msgId) {
-    int portNum = Integer.parseInt(data.trim());
-    ChargingPort port = myStation.findPort(portNum);
-    if (port == null) {
-      myListener.onApplicationLog("未找到端口 " + portNum);
-      myListener.onApplicationLog("端口 " + portNum + " 不存在响应格式待服务端协议确认，未发送计费结束响应");
-      return;
+  private void logManualStopResult(@NotNull ChargingSessionLifecycleResult result) {
+    int portNum = result.getPortNumber();
+    switch (result.getType()) {
+      case MANUAL_STOP_REJECTED_PORT_NOT_FOUND:
+      case MANUAL_STOP_REJECTED_NOT_CHARGING:
+        myListener.onApplicationLog("端口 " + portNum + " 当前不是充电中状态");
+        break;
+      case MANUAL_STOPPED:
+        myListener.onApplicationLog("端口 " + portNum + " 已发送手动停充通知");
+        break;
+      case MANUAL_STOP_PUBLISH_FAILED_RESTORED:
+        myListener.onApplicationLog("端口 " + portNum + " 手动停充通知发送失败");
+        myListener.onApplicationLog("端口 " + portNum + " 已恢复为充电中状态");
+        break;
+      case MANUAL_STOP_PUBLISH_FAILED_NOT_RESTORED:
+        myListener.onApplicationLog("端口 " + portNum + " 手动停充通知发送失败");
+        myListener.onApplicationLog("端口 " + portNum + " 状态已变化，未执行恢复");
+        break;
+      default:
+        throw new IllegalStateException("未知手动停充结果：" + result.getType());
     }
+  }
 
-    ChargingPortSnapshot currentSnapshot = port.snapshot();
-    if (currentSnapshot.getState() == ChargingPortState.CHARGING || currentSnapshot.getState() == ChargingPortState.STOPPED) {
-      waitBeforeEndBilling();
-
-      ChargingPortSnapshot billingSnapshot = port.finishBillingIfActive();
-      if (billingSnapshot == null) {
-        ChargingPortSnapshot idleSnapshot = port.snapshot();
-        if (myPublisher.publish(myCodec.buildIdleEndBillingJson(idleSnapshot, msgId))) {
-          myListener.onApplicationLog("端口 " + portNum + " 状态已变化为空闲，已发送空闲响应");
+  private void logBillingResult(@NotNull ChargingSessionLifecycleResult result) {
+    int portNum = result.getPortNumber();
+    switch (result.getType()) {
+      case BILLING_COMPLETED:
+        myListener.onApplicationLog("端口 " + portNum + " 计费已结束");
+        break;
+      case BILLING_RESPONSE_PUBLISH_FAILED:
+        myListener.onApplicationLog("端口 " + portNum + " 计费结束响应发送失败");
+        myListener.onApplicationLog("端口 " + portNum + " 计费已结束");
+        break;
+      case BILLING_IDLE_RESPONSE_SENT:
+        if (result.getCurrentSnapshot() == null) {
+          myListener.onApplicationLog("端口 " + portNum + " 为空闲状态，已发送空闲响应");
         }
         else {
-          myListener.onApplicationLog("端口 " + portNum + " 空闲计费响应发送失败");
+          myListener.onApplicationLog("端口 " + portNum + " 状态已变化，已发送空闲响应");
         }
-        return;
-      }
-
-      if (!myPublisher.publish(myCodec.buildEndBillingJson(billingSnapshot, msgId))) {
-        myListener.onApplicationLog("端口 " + portNum + " 计费结束响应发送失败");
-      }
-      myListener.onApplicationLog("端口 " + portNum + " 计费已结束");
-      myListener.onPortsChanged();
-    }
-    else {
-      if (myPublisher.publish(myCodec.buildIdleEndBillingJson(currentSnapshot, msgId))) {
-        myListener.onApplicationLog("端口 " + portNum + " 为空闲状态，已发送空闲响应");
-      }
-      else {
+        break;
+      case BILLING_IDLE_RESPONSE_PUBLISH_FAILED:
         myListener.onApplicationLog("端口 " + portNum + " 空闲计费响应发送失败");
-      }
+        break;
+      case BILLING_PORT_NOT_FOUND_RESPONSE_PENDING:
+        myListener.onApplicationLog("未找到端口 " + portNum);
+        myListener.onApplicationLog("端口 " + portNum + " 不存在响应格式待服务端协议确认，未发送计费结束响应");
+        break;
+      default:
+        throw new IllegalStateException("未知计费结束结果：" + result.getType());
+    }
+  }
+
+  private void notifyPortsChanged(@NotNull ChargingSessionLifecycleResult result) {
+    if (result.isPortsChanged()) {
+      myListener.onPortsChanged();
     }
   }
 
