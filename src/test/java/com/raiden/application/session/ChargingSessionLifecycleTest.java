@@ -75,6 +75,32 @@ class ChargingSessionLifecycleTest {
   }
 
   @Test
+  void billingCompletionDoesNotReleaseNewSessionWhenOriginalSessionChangesBeforeCompletion() {
+    Fixture fixture = new Fixture();
+    fixture.startPort();
+    RecordingBillingPublisher publisher = new RecordingBillingPublisher(true, true);
+
+    ChargingSessionLifecycleResult result = fixture.lifecycle.completeBilling(
+        1,
+        snapshot -> {
+          assertNotNull(fixture.port().finishBillingIfActive());
+          if (fixture.port().tryStartChargingFromIdle(2, 30, 5, 1, 200) == null) {
+            throw new IllegalStateException("测试端口未能进入新的充电状态");
+          }
+        },
+        publisher
+    );
+
+    assertEquals(ChargingSessionLifecycleResult.Type.BILLING_IDLE_RESPONSE_SENT, result.getType());
+    ChargingPortSnapshot currentSnapshot = fixture.port().snapshot();
+    assertEquals(ChargingPortState.CHARGING, currentSnapshot.getState());
+    assertEquals(200, currentSnapshot.getBalance());
+    assertEquals(0, publisher.activeResponses);
+    assertEquals(1, publisher.idleResponses);
+    assertFalse(result.isPortsChanged());
+  }
+
+  @Test
   void startChargingUnknownPortPublishesFailureResponse() {
     Fixture fixture = new Fixture();
     RecordingStartPublisher publisher = new RecordingStartPublisher(true);

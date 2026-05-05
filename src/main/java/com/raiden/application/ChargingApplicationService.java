@@ -111,12 +111,9 @@ public final class ChargingApplicationService {
 
   private void handleEndBilling(@NotNull String data, @NotNull String msgId) {
     int portNum = Integer.parseInt(data.trim());
-    if (mySessionLifecycle.willCompleteActiveBilling(portNum)) {
-      waitBeforeEndBilling();
-    }
-
     ChargingSessionLifecycleResult result = mySessionLifecycle.completeBilling(
         portNum,
+        snapshot -> waitBeforeEndBilling(),
         new ChargingSessionLifecycle.BillingResponsePublisher() {
           @Override
           public boolean publishActiveBillingResponse(@NotNull ChargingPortSnapshot snapshot) {
@@ -210,7 +207,7 @@ public final class ChargingApplicationService {
           myListener.onApplicationLog("端口 " + portNum + " 为空闲状态，已发送空闲响应");
         }
         else {
-          myListener.onApplicationLog("端口 " + portNum + " 状态已变化为空闲，已发送空闲响应");
+          myListener.onApplicationLog("端口 " + portNum + " 状态已变化，已发送空闲响应");
         }
         break;
       case BILLING_IDLE_RESPONSE_PUBLISH_FAILED:

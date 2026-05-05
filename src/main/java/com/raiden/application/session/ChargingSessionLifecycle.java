@@ -15,15 +15,6 @@ public final class ChargingSessionLifecycle {
     myStation = station;
   }
 
-  public boolean willCompleteActiveBilling(int portNumber) {
-    ChargingPort port = myStation.findPort(portNumber);
-    if (port == null) {
-      return false;
-    }
-    ChargingPortSnapshot snapshot = port.snapshot();
-    return snapshot.getState() == ChargingPortState.CHARGING || snapshot.getState() == ChargingPortState.STOPPED;
-  }
-
   @NotNull
   public ChargingSessionLifecycleResult startCharging(int portNumber,
                                                       int orderType,
@@ -79,6 +70,13 @@ public final class ChargingSessionLifecycle {
 
   @NotNull
   public ChargingSessionLifecycleResult completeBilling(int portNumber, @NotNull BillingResponsePublisher publisher) {
+    return completeBilling(portNumber, snapshot -> {}, publisher);
+  }
+
+  @NotNull
+  public ChargingSessionLifecycleResult completeBilling(int portNumber,
+                                                        @NotNull ActiveBillingCompletionHook completionHook,
+                                                        @NotNull BillingResponsePublisher publisher) {
     ChargingPort port = myStation.findPort(portNumber);
     if (port == null) {
       return result(ChargingSessionLifecycleResult.Type.BILLING_PORT_NOT_FOUND_RESPONSE_PENDING, portNumber, false, false, null, null);
@@ -86,16 +84,17 @@ public final class ChargingSessionLifecycle {
 
     ChargingPortSnapshot currentSnapshot = port.snapshot();
     if (currentSnapshot.getState() == ChargingPortState.CHARGING || currentSnapshot.getState() == ChargingPortState.STOPPED) {
-      ChargingPortSnapshot billingSnapshot = port.finishBillingIfActive();
+      completionHook.beforeCompleteActiveBilling(currentSnapshot);
+      ChargingPortSnapshot billingSnapshot = port.finishBillingIfSameSession(currentSnapshot);
       if (billingSnapshot == null) {
-        ChargingPortSnapshot idleSnapshot = port.snapshot();
-        boolean published = publisher.publishIdleBillingResponse(idleSnapshot);
+        ChargingPortSnapshot changedSnapshot = port.snapshot();
+        boolean published = publisher.publishIdleBillingResponse(changedSnapshot);
         return result(
             published ? ChargingSessionLifecycleResult.Type.BILLING_IDLE_RESPONSE_SENT : ChargingSessionLifecycleResult.Type.BILLING_IDLE_RESPONSE_PUBLISH_FAILED,
             portNumber,
             published,
             false,
-            idleSnapshot,
+            changedSnapshot,
             currentSnapshot
         );
       }
@@ -133,6 +132,10 @@ public final class ChargingSessionLifecycle {
 
   public interface ManualStopPublisher {
     boolean publishManualStop(@NotNull ChargingPortSnapshot snapshot);
+  }
+
+  public interface ActiveBillingCompletionHook {
+    void beforeCompleteActiveBilling(@NotNull ChargingPortSnapshot snapshot);
   }
 
   public interface BillingResponsePublisher {

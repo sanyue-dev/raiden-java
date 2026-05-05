@@ -92,4 +92,19 @@ class ChargingPortTest {
     assertEquals(ChargingPortState.IDLE, port.snapshot().getState());
     assertEquals(0, port.snapshot().getBalance());
   }
+
+  @Test
+  void finishesBillingOnlyForSameActiveSession() {
+    ChargingPort port = new ChargingPort(1);
+
+    ChargingPortSnapshot firstSession = port.tryStartChargingFromIdle(2, 30, 5, 1, 100);
+    assertNotNull(firstSession);
+    assertNotNull(port.finishBillingIfActive());
+    assertNotNull(port.tryStartChargingFromIdle(2, 30, 5, 1, 200));
+
+    assertNull(port.finishBillingIfSameSession(firstSession));
+    ChargingPortSnapshot currentSnapshot = port.snapshot();
+    assertEquals(ChargingPortState.CHARGING, currentSnapshot.getState());
+    assertEquals(200, currentSnapshot.getBalance());
+  }
 }

@@ -95,6 +95,20 @@ public final class ChargingPort {
     }
   }
 
+  @Nullable
+  public ChargingPortSnapshot finishBillingIfSameSession(@NotNull ChargingPortSnapshot snapshot) {
+    synchronized (myLock) {
+      if ((snapshot.getState() != ChargingPortState.CHARGING && snapshot.getState() != ChargingPortState.STOPPED) ||
+          (myState != ChargingPortState.CHARGING && myState != ChargingPortState.STOPPED) ||
+          !isSameSessionLocked(snapshot)) {
+        return null;
+      }
+      ChargingPortSnapshot billingSnapshot = snapshotLocked();
+      resetLocked();
+      return billingSnapshot;
+    }
+  }
+
   public void reset() {
     synchronized (myLock) {
       resetLocked();
